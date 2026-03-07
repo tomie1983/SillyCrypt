@@ -3,7 +3,7 @@ package com.dev.libsillycript.core
 import com.dev.libsillycript.core.blockCiphers.BlockCipherType
 import com.dev.libsillycript.core.kdfs.KDFType
 import com.dev.libsillycript.core.keyStore.KeyStoreFactoryUnsafeImpl
-import com.dev.libsillycript.core.memory.FileRandomAccessData
+import com.dev.exfat.data.FileRandomAccessData
 import com.dev.libsillycript.core.utils.use
 import junit.framework.TestCase
 import junit.framework.TestCase.assertTrue
@@ -16,7 +16,6 @@ import org.junit.BeforeClass
 import org.junit.Test
 import java.io.File
 import java.security.Security
-import kotlin.compareTo
 import kotlin.random.Random
 
 

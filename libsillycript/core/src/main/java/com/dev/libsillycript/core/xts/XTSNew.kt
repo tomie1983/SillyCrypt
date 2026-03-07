@@ -5,12 +5,17 @@ import com.dev.libsillycript.core.blockCiphers.BlockCipherFactory
 import com.dev.libsillycript.core.blockCiphers.BlockCipherType
 import com.dev.libsillycript.core.keyStore.KeyStore
 import java.util.Arrays
+import kotlin.math.min
 
 
-class XTSNew(private val keyStore: KeyStore, private val pairs: List<CipherPair>) {
+class XTSNew(
+    private val keyStore: KeyStore,
+    private val pairs: List<CipherPair>
+) {
     data class CipherPair(val cipherA: BlockCipher, val cipherB: BlockCipher) {
-        constructor(cipherFactory: BlockCipherFactory, cipherType: BlockCipherType): this(
-            cipherFactory.getCipher(cipherType), cipherFactory.getCipher(cipherType)
+        constructor(cipherFactory: BlockCipherFactory, cipherType: BlockCipherType) : this(
+            cipherFactory.getCipher(cipherType),
+            cipherFactory.getCipher(cipherType)
         )
     }
 
@@ -19,208 +24,258 @@ class XTSNew(private val keyStore: KeyStore, private val pairs: List<CipherPair>
     }
 
     /**
-     * Шифрование, как xts_encrypt(context,...).
-     * Возвращает true при успехе.
+     * Encrypt one data unit.
+     * Обычно data unit = 1 сектор.
      */
-    suspend fun encrypt(data: ByteArray, offset: Int, length: Int, startSector: Long): Boolean {
-        val key = keyStore.getKey()
+    suspend fun encryptDataUnit(
+        data: ByteArray,
+        offset: Int,
+        length: Int,
+        dataUnitIndex: Long
+    ): Boolean {
         checkBounds(data, offset, length)
         if (length == 0 || pairs.isEmpty()) return false
-
-        var sectorIndex: Long
-        var cur: Int
-        var left: Int
-
-        // По всем добавленным парам (вперёд), как в C-коде (head -> tail)
-        for (pair in pairs) {
-            cur = offset
-            left = length
-            sectorIndex = startSector
-
-            while (left > 0) {
-                val incr = if (left >= SECTOR_SIZE) SECTOR_SIZE else left
-                if (!isBufferAllZero(data, cur, SECTOR_SIZE)) {
-                    xtsEncryptSector(pair.cipherA, pair.cipherB, data, cur, incr, sectorIndex, key)
-                }
-                cur += incr
-                left -= incr
-                sectorIndex++
-            }
+        require(length >= BLOCK) {
+            "XTS requires at least one full 16-byte block per non-empty data unit (len=$length)"
         }
-        Arrays.fill(key, 0.toByte())
+
+        val key = keyStore.getKey()
+        try {
+            for (pair in pairs) {
+                xtsEncryptDataUnit(
+                    cipherA = pair.cipherA,
+                    cipherB = pair.cipherB,
+                    buffer = data,
+                    off = offset,
+                    len = length,
+                    dataUnitIndex = dataUnitIndex,
+                    key = key
+                )
+            }
+            return true
+        } finally {
+            Arrays.fill(key, 0)
+        }
+    }
+
+    /**
+     * Decrypt one data unit.
+     * Обычно data unit = 1 сектор.
+     */
+    suspend fun decryptDataUnit(
+        data: ByteArray,
+        offset: Int,
+        length: Int,
+        dataUnitIndex: Long
+    ): Boolean {
+        checkBounds(data, offset, length)
+        if (length == 0 || pairs.isEmpty()) return false
+        require(length >= BLOCK) {
+            "XTS requires at least one full 16-byte block per non-empty data unit (len=$length)"
+        }
+
+        val key = keyStore.getKey()
+        try {
+            for (pair in pairs.asReversed()) {
+                xtsDecryptDataUnit(
+                    cipherA = pair.cipherA,
+                    cipherB = pair.cipherB,
+                    buffer = data,
+                    off = offset,
+                    len = length,
+                    dataUnitIndex = dataUnitIndex,
+                    key = key
+                )
+            }
+            return true
+        } finally {
+            Arrays.fill(key, 0)
+        }
+    }
+
+    /**
+     * Совместимость со старым API: шифрует несколько подряд идущих data units.
+     * Можно удалить, если нигде больше не используется.
+     */
+    suspend fun encrypt(
+        data: ByteArray,
+        offset: Int,
+        length: Int,
+        startSector: Long,
+        dataUnitSize: Int = length
+    ): Boolean {
+        checkBounds(data, offset, length)
+        if (length == 0 || pairs.isEmpty()) return false
+        require(dataUnitSize >= BLOCK) { "dataUnitSize must be >= $BLOCK" }
+
+        var cur = offset
+        var left = length
+        var sectorIndex = startSector
+
+        while (left > 0) {
+            val chunk = min(left, dataUnitSize)
+            encryptDataUnit(data, cur, chunk, sectorIndex)
+            cur += chunk
+            left -= chunk
+            sectorIndex++
+        }
         return true
     }
 
     /**
-     * Дешифрование, как xts_decrypt(context,...).
-     * Возвращает true при успехе.
+     * Совместимость со старым API: дешифрует несколько подряд идущих data units.
+     * Можно удалить, если нигде больше не используется.
      */
-    suspend fun decrypt(data: ByteArray, offset: Int, length: Int, startSector: Long): Boolean {
+    suspend fun decrypt(
+        data: ByteArray,
+        offset: Int,
+        length: Int,
+        startSector: Long,
+        dataUnitSize: Int = length
+    ): Boolean {
         checkBounds(data, offset, length)
         if (length == 0 || pairs.isEmpty()) return false
-        val key = keyStore.getKey()
-        var sectorIndex: Long
-        var cur: Int
-        var left: Int
+        require(dataUnitSize >= BLOCK) { "dataUnitSize must be >= $BLOCK" }
 
-        // По всем парам в обратном порядке (tail -> head), как в C-коде
-        for (pair in pairs.asReversed()) {
-            cur = offset
-            left = length
-            sectorIndex = startSector
+        var cur = offset
+        var left = length
+        var sectorIndex = startSector
 
-            while (left > 0) {
-                val incr = if (left >= SECTOR_SIZE) SECTOR_SIZE else left
-                if (!isBufferAllZero(data, cur, SECTOR_SIZE)) {
-                    xtsDecryptSector(pair.cipherA, pair.cipherB, data, cur, incr, sectorIndex, key)
-                }
-                cur += incr
-                left -= incr
-                sectorIndex++
-            }
+        while (left > 0) {
+            val chunk = min(left, dataUnitSize)
+            decryptDataUnit(data, cur, chunk, sectorIndex)
+            cur += chunk
+            left -= chunk
+            sectorIndex++
         }
-        Arrays.fill(key, 0.toByte())
         return true
     }
 
-    // ---------- НИЖЕ — точные строительные блоки, повторяющие логику app-xts.c ----------
-
-    private fun xtsEncryptSector(
+    private fun xtsEncryptDataUnit(
         cipherA: BlockCipher,
         cipherB: BlockCipher,
         buffer: ByteArray,
         off: Int,
         len: Int,
-        startSector: Long,
+        dataUnitIndex: Long,
         key: ByteArray
     ) {
-        require(len >= 0) { "len must be non-negative" }
-        if (len == 0) return
-        require(len >= BLOCK) {
-            "XTS requires at least one full 16-byte block per non-empty sector chunk (len=$len)"
-        }
-
         val hi = off + len
         var pos = off
 
         val (keyEncryption, keyTweak) = splitKeys(key)
+        try {
+            val tweak = initialTweak(dataUnitIndex, cipherB, keyTweak)
+            try {
+                while (pos + BLOCK <= hi) {
+                    xor16InPlace(buffer, pos, tweak)
+                    cipherA.encryptBlock(buffer, pos, buffer, pos, keyEncryption)
+                    xor16InPlace(buffer, pos, tweak)
+                    pos += BLOCK
+                    gfMulX(tweak)
+                }
 
-        // tweak = E_B( little_endian(startSector) || 0^64 )
-        val tweak = initialTweak(startSector, cipherB, keyTweak)
-        keyTweak.fill(Byte.MIN_VALUE)
-
-        // Полные блоки
-        while (pos + BLOCK <= hi) {
-            xor16InPlace(buffer, pos, tweak)
-            cipherA.encryptBlock(buffer, pos, buffer, pos, keyEncryption)
-            xor16InPlace(buffer, pos, tweak)
-            pos += BLOCK
-            gfMulX(tweak)
-        }
-
-        // Частичный хвост (<16) — схема "ciphertext stealing"
-        if (pos < hi) {
-            require(pos - BLOCK >= off) {
-                "XTS partial-block encryption requires at least one full block before tail"
+                if (pos < hi) {
+                    require(pos - BLOCK >= off) {
+                        "XTS partial-block encryption requires at least one full block before tail"
+                    }
+                    val tp = pos - BLOCK
+                    var p = pos
+                    while (p < hi) {
+                        val tmp = buffer[p - BLOCK]
+                        buffer[p - BLOCK] = buffer[p]
+                        buffer[p] = tmp
+                        p++
+                    }
+                    xor16InPlace(buffer, tp, tweak)
+                    cipherA.encryptBlock(buffer, tp, buffer, tp, keyEncryption)
+                    xor16InPlace(buffer, tp, tweak)
+                }
+            } finally {
+                Arrays.fill(tweak, 0)
             }
-            val tp = pos - BLOCK
-            var p = pos
-            while (p < hi) {
-                val tmp = buffer[p - BLOCK]
-                buffer[p - BLOCK] = buffer[p]
-                buffer[p] = tmp
-                p++
-            }
-            xor16InPlace(buffer, tp, tweak)
-            cipherA.encryptBlock(buffer, tp, buffer, tp, keyEncryption)
-            xor16InPlace(buffer, tp, tweak)
+        } finally {
+            Arrays.fill(keyEncryption, 0)
+            Arrays.fill(keyTweak, 0)
         }
-        keyEncryption.fill(Byte.MIN_VALUE)
     }
 
-    private fun xtsDecryptSector(
+    private fun xtsDecryptDataUnit(
         cipherA: BlockCipher,
         cipherB: BlockCipher,
         buffer: ByteArray,
         off: Int,
         len: Int,
-        startSector: Long,
+        dataUnitIndex: Long,
         key: ByteArray
     ) {
-        require(len >= 0) { "len must be non-negative" }
-        if (len == 0) return
-        require(len >= BLOCK) {
-            "XTS requires at least one full 16-byte block per non-empty sector chunk (len=$len)"
-        }
-
-        val (keyEncryption, keyTweak) = splitKeys(key)
-
         val hi = off + len
         var pos = off
 
-        // tweak = E_B( little_endian(startSector) || 0^64 )
-        val tweak = initialTweak(startSector, cipherB, keyTweak)
-        keyTweak.fill(Byte.MIN_VALUE)
-        val tweak2 = ByteArray(BLOCK)
+        val (keyEncryption, keyTweak) = splitKeys(key)
+        try {
+            val tweak = initialTweak(dataUnitIndex, cipherB, keyTweak)
+            val tweak2 = ByteArray(BLOCK)
+            try {
+                while (pos + BLOCK <= hi) {
+                    val remaining = hi - pos
+                    if (remaining > BLOCK && remaining < 2 * BLOCK) {
+                        System.arraycopy(tweak, 0, tweak2, 0, BLOCK)
+                        gfMulX(tweak)
+                    }
 
-        // Полные блоки
-        while (pos + BLOCK <= hi) {
-            val remaining = hi - pos
-            if (remaining > BLOCK && remaining < 2 * BLOCK) {
-                // Ровно 1 полный блок и хвост — сохраним текущий твик как hh2
-                System.arraycopy(tweak, 0, tweak2, 0, BLOCK)
-                gfMulX(tweak)
-            }
-            xor16InPlace(buffer, pos, tweak)
-            cipherA.decryptBlock(buffer, pos, buffer, pos, keyEncryption)
-            xor16InPlace(buffer, pos, tweak)
-            pos += BLOCK
-            gfMulX(tweak)
-        }
+                    xor16InPlace(buffer, pos, tweak)
+                    cipherA.decryptBlock(buffer, pos, buffer, pos, keyEncryption)
+                    xor16InPlace(buffer, pos, tweak)
+                    pos += BLOCK
+                    gfMulX(tweak)
+                }
 
-        // Частичный хвост (<16): «распаковываем» украденные байты и дешифруем предпоследний блок с tweak2
-        if (pos < hi) {
-            val tp = pos - BLOCK
-            var p = pos
-            while (p < hi) {
-                val tmp = buffer[p - BLOCK]
-                buffer[p - BLOCK] = buffer[p]
-                buffer[p] = tmp
-                p++
+                if (pos < hi) {
+                    val tp = pos - BLOCK
+                    var p = pos
+                    while (p < hi) {
+                        val tmp = buffer[p - BLOCK]
+                        buffer[p - BLOCK] = buffer[p]
+                        buffer[p] = tmp
+                        p++
+                    }
+                    xor16InPlace(buffer, tp, tweak2)
+                    cipherA.decryptBlock(buffer, tp, buffer, tp, keyEncryption)
+                    xor16InPlace(buffer, tp, tweak2)
+                }
+            } finally {
+                Arrays.fill(tweak, 0)
+                Arrays.fill(tweak2, 0)
             }
-            xor16InPlace(buffer, tp, tweak2)
-            cipherA.decryptBlock(buffer, tp, buffer, tp, keyEncryption)
-            xor16InPlace(buffer, tp, tweak2)
+        } finally {
+            Arrays.fill(keyEncryption, 0)
+            Arrays.fill(keyTweak, 0)
         }
-        keyEncryption.fill(Byte.MIN_VALUE)
     }
 
-    // Tweak = E_B( LBA_le || 0^64 )
-    private fun initialTweak(sectorIndex: Long, cipherB: BlockCipher, key: ByteArray): ByteArray {
+    private fun initialTweak(dataUnitIndex: Long, cipherB: BlockCipher, key: ByteArray): ByteArray {
         val t = ByteArray(BLOCK)
-        // little-endian запись 64-бит LBA
-        var v = sectorIndex
+        var v = dataUnitIndex
         for (i in 0 until 8) {
             t[i] = (v and 0xFFL).toByte()
             v = v ushr 8
         }
-        // t[8..15] уже 0
-        cipherB.encryptBlock(t, 0, t, 0, key) // in-place
+        cipherB.encryptBlock(t, 0, t, 0, key)
         return t
     }
 
-    // Умножение твика на x в GF(2^128) с редукцией по 0x87 (как в app-xts.c ветка UNIT_BITS==8)
     private fun gfMulX(x: ByteArray) {
         require(x.size == BLOCK)
+
         val msb = (x[15].toInt() and 0x80) != 0
-        // Сдвиг влево, перенос младшего бита — из старшего бита предыдущего байта
         for (i in 15 downTo 1) {
             val cur = x[i].toInt() and 0xFF
             val prevMsb = (x[i - 1].toInt() and 0x80) ushr 7
-            x[i] = ((cur shl 1) and 0xFE or prevMsb).toByte()
+            x[i] = (((cur shl 1) and 0xFE) or prevMsb).toByte()
         }
-        var b0 = (x[0].toInt() and 0xFF) shl 1
-        b0 = b0 and 0xFF
+
+        var b0 = ((x[0].toInt() and 0xFF) shl 1) and 0xFF
         if (msb) b0 = b0 xor 0x87
         x[0] = b0.toByte()
     }
@@ -233,16 +288,6 @@ class XTSNew(private val keyStore: KeyStore, private val pairs: List<CipherPair>
         }
     }
 
-    private fun isBufferAllZero(buf: ByteArray, off: Int, len: Int): Boolean {
-        var i = 0
-        val end = off + len
-        while (off + i < end) {
-            if (buf[off + i].toInt() != 0) return false
-            i++
-        }
-        return true
-    }
-
     private fun checkBounds(data: ByteArray, offset: Int, length: Int) {
         require(offset >= 0 && length >= 0 && offset + length <= data.size) {
             "offset/length out of bounds: off=$offset len=$length data=${data.size}"
@@ -252,15 +297,13 @@ class XTSNew(private val keyStore: KeyStore, private val pairs: List<CipherPair>
     private fun splitKeys(key: ByteArray): Pair<ByteArray, ByteArray> {
         val halfKey = key.size / 2
         val key1 = ByteArray(halfKey)
-        System.arraycopy(key, 0, key1, 0, halfKey)
         val key2 = ByteArray(halfKey)
+        System.arraycopy(key, 0, key1, 0, halfKey)
         System.arraycopy(key, halfKey, key2, 0, halfKey)
         return key1 to key2
     }
 
     companion object {
-        const val KEY_SIZE = 64            // 2 * 256-bit ключа для AES-256-XTS
-        const val SECTOR_SIZE = 512        // XTS_SECTOR_SIZE
-        private const val BLOCK = 16        // BYTES_PER_XTS_BLOCK
+        private const val BLOCK = 16
     }
 }

@@ -19,19 +19,6 @@ fun beLong(buf: ByteArray, off: Int): Long {
 }
 
 /**
- * Concatenates two byte arrays into a single new array.
- *
- * @param a the first byte array
- * @param b the second byte array
- * @return a new array containing all bytes from [a] followed by all bytes from [b]
- */
-fun concat(a: ByteArray, b: ByteArray): ByteArray {
-    val result = a.copyOf(a.size + b.size)
-    System.arraycopy(b, 0, result, a.size, b.size)
-    return result
-}
-
-/**
  * Writes a 64-bit long value into this array in big-endian byte order.
  *
  * @receiver the destination byte array

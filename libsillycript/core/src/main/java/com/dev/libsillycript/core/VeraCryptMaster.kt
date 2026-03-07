@@ -10,11 +10,14 @@ import com.dev.libsillycript.core.kdfs.KDFFactory
 import com.dev.libsillycript.core.kdfs.KDFFactoryImpl
 import com.dev.libsillycript.core.kdfs.KDFType
 import com.dev.libsillycript.core.keyStore.KeyStoreFactory
-import com.dev.libsillycript.core.memory.FileRandomAccessData
-import com.dev.libsillycript.core.memory.MemoryRandomAccessData
+import com.dev.exfat.data.FileRandomAccessData
+import com.dev.exfat.data.MemoryRandomAccessData
 import com.dev.exfat.data.RandomAccessData
+import com.dev.exfat.exfat.concat
+import com.dev.libsillycript.core.cache.SharedSectorCache
+import com.dev.libsillycript.core.factory.VeracryptFileFactory
+import com.dev.libsillycript.core.factory.VeracryptMemoryFactory
 import com.dev.libsillycript.core.utils.beLong
-import com.dev.libsillycript.core.utils.concat
 import com.dev.libsillycript.core.utils.use
 import com.dev.libsillycript.core.utils.writeIntBE
 import com.dev.libsillycript.core.utils.writeLongBE
@@ -23,6 +26,7 @@ import com.dev.libsillycript.core.utils.writeStringLE
 import com.dev.libsillycript.core.volumes.BaseVeracryptVolume
 import com.dev.libsillycript.core.volumes.EncryptionData
 import com.dev.libsillycript.core.xts.XTSNew
+import jdk.internal.net.http.common.Log
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -283,7 +287,11 @@ open class VeraCryptMaster(
         cipherTypes: List<BlockCipherType>,
         isHidden: Boolean = false
     ): String {
-        return open(MemoryRandomAccessData(input), password, kdf, fsType, cipherTypes, isHidden)
+        return withContext(safeDispatcher) {
+            val data  = openUnsafeRaw(MemoryRandomAccessData(input), password, kdf, cipherTypes, isHidden)
+            val volumeFactory = VeracryptMemoryFactory(input, data)
+            return@withContext fsFactory.create(fsType, volumeFactory)
+        }
     }
 
     suspend fun open(
@@ -293,33 +301,22 @@ open class VeraCryptMaster(
         fsType: FsType,
         cipherTypes: List<BlockCipherType>,
         isHidden: Boolean = false): String {
-        return open(FileRandomAccessData(input), password, kdf, fsType, cipherTypes, isHidden)
-    }
-
-    @Throws(IOException::class, GeneralSecurityException::class)
-    suspend fun open(
-        input: RandomAccessData,
-        password: CharArray,
-        kdf: KDFType,
-        fsType: FsType,
-        cipherTypes: List<BlockCipherType>,
-        isHidden: Boolean = false
-    ): String {
         return withContext(safeDispatcher) {
-            val volume = openUnsafeRaw(input, password, kdf, cipherTypes, isHidden)
-            return@withContext fsFactory.create(fsType, volume)
+            val data  = openUnsafeRaw(FileRandomAccessData(input), password, kdf, cipherTypes, isHidden)
+            val volumeFactory = VeracryptFileFactory(input, data)
+            return@withContext fsFactory.create(fsType, volumeFactory)
         }
     }
-
 
     suspend fun openRaw(
         input: ByteArray,
         password: CharArray,
         kdf: KDFType,
         cipherTypes: List<BlockCipherType>,
-        isHidden: Boolean = false
+        isHidden: Boolean = false,
+        cache: SharedSectorCache = SharedSectorCache()
     ): BaseVeracryptVolume {
-        return openRaw(MemoryRandomAccessData(input), password, kdf, cipherTypes, isHidden)
+        return openRaw(MemoryRandomAccessData(input), password, kdf, cipherTypes, isHidden, cache)
     }
 
     suspend fun openRaw(
@@ -327,8 +324,10 @@ open class VeraCryptMaster(
         password: CharArray,
         kdf: KDFType,
         cipherTypes: List<BlockCipherType>,
-        isHidden: Boolean = false): BaseVeracryptVolume {
-        return openRaw(FileRandomAccessData(input), password, kdf, cipherTypes, isHidden)
+        isHidden: Boolean = false,
+        cache: SharedSectorCache = SharedSectorCache()
+    ): BaseVeracryptVolume {
+        return openRaw(FileRandomAccessData(input), password, kdf, cipherTypes, isHidden, cache)
     }
 
     /** Open the volume and return the *entire* decrypted payload without headers */
@@ -338,10 +337,11 @@ open class VeraCryptMaster(
         password: CharArray,
         kdf: KDFType,
         cipherTypes: List<BlockCipherType>,
-        isHidden: Boolean = false
+        isHidden: Boolean = false,
+        cache: SharedSectorCache = SharedSectorCache()
     ): BaseVeracryptVolume {
         return withContext(safeDispatcher) {
-            openUnsafeRaw(input, password, kdf, cipherTypes, isHidden)
+            BaseVeracryptVolume(input, cache, openUnsafeRaw(input, password, kdf, cipherTypes, isHidden))
         }
     }
 
@@ -351,7 +351,7 @@ open class VeraCryptMaster(
         kdf: KDFType,
         cipherTypes: List<BlockCipherType>,
         isHidden: Boolean = false
-    ): BaseVeracryptVolume {
+    ): EncryptionData {
 
         /* 0. For a hidden volume, skip the secondary (backup) header */
         if (isHidden) input.seek(FULL_HEADER_SIZE)
@@ -400,17 +400,12 @@ open class VeraCryptMaster(
         val xtsKey = concat(mKey1, mKey2)                                // 64 bytes
         /* 6. Seek to the first encrypted data region */
         val bytesAlreadyRead = input.position                           // = HEADER_SIZE (+ FULL_HEADER if skipped)
-        val needToSkip = dataOffset - bytesAlreadyRead
-        if (needToSkip < 0)
-            throw IOException("Calculated dataOffset ($dataOffset) < current position ($bytesAlreadyRead)")
-        input.seek(needToSkip)
+        input.seek(dataOffset)
         /* 7. Decrypt the payload data */
         val keyStore = keyStoreFactory.get()
         keyStore.setKey(xtsKey)
         val xts = XTSNew(keyStore, buildCipherPairsList(cipherTypes))
-        return BaseVeracryptVolume(input, EncryptionData(xts, dataOffset, dataSize, SECTOR_SIZE)).apply {
-            seek(0)
-        }
+        return EncryptionData(xts, dataOffset, dataSize, SECTOR_SIZE)
     }
 
     /* --- Decrypt the header section (448 bytes) --- */

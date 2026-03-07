@@ -5,7 +5,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.dev.libsillycript.core.blockCiphers.BlockCipherType
 import com.dev.libsillycript.core.kdfs.KDFType
-import com.dev.libsillycript.core.memory.FileRandomAccessData
+import com.dev.exfat.data.FileRandomAccessData
 import com.dev.libsillycript.core.utils.use
 import junit.framework.TestCase
 import junit.framework.TestCase.assertTrue

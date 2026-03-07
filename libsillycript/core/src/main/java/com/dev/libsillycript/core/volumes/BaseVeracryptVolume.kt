@@ -1,156 +1,199 @@
 package com.dev.libsillycript.core.volumes
 
 import com.dev.exfat.data.RandomAccessData
-import java.io.File
+import com.dev.libsillycript.core.cache.SharedSectorCache
 import java.io.IOException
 import java.math.BigInteger
 import java.security.MessageDigest
+import java.util.Arrays
 import kotlin.math.min
 
 class BaseVeracryptVolume(
     private val data: RandomAccessData,
-    private val encryptionData: EncryptionData
+    private val cache: SharedSectorCache,
+    private val encryptionData: EncryptionData,
+    maxCachedSectors: Int = 2048
 ) : RandomAccessData {
 
+    private val sectorSize = encryptionData.sectorSize
+    private var cursor: Long = 0L
+
+
     override fun seek(pos: Long) {
-        if (pos > encryptionData.size) {
-            throw RuntimeException()
-        }
-        val position = pos + encryptionData.offset
-        data.seek(position)
+        require(pos >= 0L) { "Negative seek: $pos" }
+        require(pos <= size) { "Seek beyond volume size: $pos > $size" }
+        cursor = pos
     }
 
     override suspend fun read(buf: ByteArray): Int {
-        if (position + buf.size > size) {
-            return -1
-        }
-        val initialSector = data.position / encryptionData.sectorSize
-        val initialOffset = (data.position % encryptionData.sectorSize).toInt()
-        val endSector = (data.position + buf.size) / encryptionData.sectorSize
-        val endOffset = ((data.position + buf.size) % encryptionData.sectorSize).toInt()
-        decryptSectors(buf, initialSector, endSector, initialOffset, endOffset)
-        return buf.size
-    }
+        if (buf.isEmpty()) return 0
+        if (cursor >= size) return -1
 
-    private suspend fun decryptSectors(
-        resultBuffer: ByteArray,
-        startSector: Long,
-        endSector: Long,
-        initialOffset: Int,
-        endOffset: Int
-    ): Int {
-        val sectorBuf = ByteArray(encryptionData.sectorSize)
-        data.seek(startSector * encryptionData.sectorSize)
-        for (sectorIndex in startSector..endSector) {
-            val read = data.read(sectorBuf)
-            if (read < encryptionData.sectorSize)
-                throw IOException("Incomplete sector read: $read bytes")
-            encryptionData.xts.decrypt(sectorBuf, 0, read, sectorIndex)
-            val currentOffset = encryptionData.sectorSize * (sectorIndex - startSector).toInt()
-            if (sectorIndex == startSector) {
-                System.arraycopy(
-                    sectorBuf,
-                    initialOffset,
-                    resultBuffer,
-                    0,
-                    min(encryptionData.sectorSize - initialOffset, resultBuffer.size)
-                )
-            } else if (sectorIndex == endSector) {
-                System.arraycopy(sectorBuf, 0, resultBuffer, currentOffset, endOffset)
-            } else {
-                System.arraycopy(
-                    sectorBuf,
-                    0,
-                    resultBuffer,
-                    currentOffset,
-                    encryptionData.sectorSize
-                )
-            }
-        }
-        data.seek(endSector * encryptionData.sectorSize + endOffset)
-        return resultBuffer.size
-    }
+        val toRead = min(buf.size.toLong(), size - cursor).toInt()
+        val absStart = encryptionData.offset + cursor
+        val absEndExclusive = absStart + toRead
 
-    private suspend fun encryptSectors(
-        plainData: ByteArray,
-        startSector: Long,
-        endSector: Long,
-        initialOffset: Int,
-        endOffset: Int
-    ) {
-        val sectorBuf = ByteArray(encryptionData.sectorSize)
-        data.seek(startSector * encryptionData.sectorSize)
-        for (sectorIndex in startSector..endSector) {
-            val currentOffset = encryptionData.sectorSize * (sectorIndex - startSector).toInt()
-            if (sectorIndex == startSector) {
-                data.read(sectorBuf)
-                encryptionData.xts.decrypt(sectorBuf,0,encryptionData.sectorSize,sectorIndex)
-                System.arraycopy(
-                    plainData,
-                    0,
-                    sectorBuf,
-                    initialOffset,
-                    min(encryptionData.sectorSize - initialOffset, plainData.size)
-                )
-                data.seek(startSector * encryptionData.sectorSize)
-            } else if (sectorIndex == endSector) {
-                data.read(sectorBuf)
-                encryptionData.xts.decrypt(sectorBuf,0,encryptionData.sectorSize,sectorIndex)
-                System.arraycopy(
-                    plainData,
-                    plainData.size - endOffset,
-                    sectorBuf,
-                    endOffset,
-                    endOffset
-                )
-                data.seek(endSector * encryptionData.sectorSize)
-            } else {
-                System.arraycopy(plainData, currentOffset, sectorBuf, 0, encryptionData.sectorSize)
+        val startSector = absStart / sectorSize
+        val endSector = (absEndExclusive - 1) / sectorSize
+        val startOffset = (absStart % sectorSize).toInt()
+
+        val sectorBuf = ByteArray(sectorSize)
+        var outOffset = 0
+
+        try {
+            for (sectorIndex in startSector..endSector) {
+                readCipherSector(sectorIndex, sectorBuf)
+                encryptionData.xts.decryptDataUnit(sectorBuf, 0, sectorSize, sectorIndex)
+
+                val sectorStartAbs = sectorIndex * sectorSize.toLong()
+                val copyStart = if (sectorIndex == startSector) startOffset else 0
+                val copyEndExclusive = if (sectorIndex == endSector) {
+                    (absEndExclusive - sectorStartAbs).toInt()
+                } else {
+                    sectorSize
+                }
+
+                val copyLen = copyEndExclusive - copyStart
+                System.arraycopy(sectorBuf, copyStart, buf, outOffset, copyLen)
+                outOffset += copyLen
             }
-            encryptionData.xts.encrypt(sectorBuf,0,encryptionData.sectorSize,sectorIndex)
-            data.write(sectorBuf)
+        } finally {
+            Arrays.fill(sectorBuf, 0)
         }
-        data.seek(endSector * encryptionData.sectorSize + endOffset)
+
+        cursor += toRead
+        return toRead
     }
 
     override suspend fun write(buf: ByteArray) {
-        if (position + buf.size > size) {
-            throw RuntimeException()
+        if (buf.isEmpty()) return
+        require(cursor + buf.size <= size) { "Write beyond volume size" }
+
+        val absStart = encryptionData.offset + cursor
+        val absEndExclusive = absStart + buf.size.toLong()
+
+        val startSector = absStart / sectorSize
+        val endSector = (absEndExclusive - 1) / sectorSize
+        val startOffset = (absStart % sectorSize).toInt()
+
+        val sectorBuf = ByteArray(sectorSize)
+        var inOffset = 0
+
+        try {
+            for (sectorIndex in startSector..endSector) {
+                val sectorStartAbs = sectorIndex * sectorSize.toLong()
+                val writeStart = if (sectorIndex == startSector) startOffset else 0
+                val writeEndExclusive = if (sectorIndex == endSector) {
+                    (absEndExclusive - sectorStartAbs).toInt()
+                } else {
+                    sectorSize
+                }
+                val writeLen = writeEndExclusive - writeStart
+                val isWholeSectorWrite = writeStart == 0 && writeEndExclusive == sectorSize
+
+                if (isWholeSectorWrite) {
+                    System.arraycopy(buf, inOffset, sectorBuf, 0, sectorSize)
+                } else {
+                    readCipherSector(sectorIndex, sectorBuf)
+                    encryptionData.xts.decryptDataUnit(sectorBuf, 0, sectorSize, sectorIndex)
+                    System.arraycopy(buf, inOffset, sectorBuf, writeStart, writeLen)
+                }
+
+                encryptionData.xts.encryptDataUnit(sectorBuf, 0, sectorSize, sectorIndex)
+                writeCipherSector(sectorIndex, sectorBuf)
+
+                inOffset += writeLen
+                Arrays.fill(sectorBuf, 0)
+            }
+        } finally {
+            Arrays.fill(sectorBuf, 0)
         }
-        val initialSector = data.position / encryptionData.sectorSize
-        val initialOffset = (data.position % encryptionData.sectorSize).toInt()
-        val endSector = (data.position + buf.size) / encryptionData.sectorSize
-        val endOffset = ((data.position + buf.size) % encryptionData.sectorSize).toInt()
-        encryptSectors(buf, initialSector, endSector, initialOffset, endOffset)
+
+        cursor += buf.size.toLong()
     }
 
     override suspend fun readFully(): ByteArray {
         seek(0)
-        if (size > Int.MAX_VALUE) {
-            throw RuntimeException()
+        require(size <= Int.MAX_VALUE.toLong()) { "Volume too large for readFully(): $size" }
+
+        val out = ByteArray(size.toInt())
+        var off = 0
+        while (off < out.size) {
+            val chunk = ByteArray(min(64 * 1024, out.size - off))
+            val read = read(chunk)
+            if (read <= 0) break
+            System.arraycopy(chunk, 0, out, off, read)
+            off += read
+            Arrays.fill(chunk, 0)
         }
-        val buffer = ByteArray(size.toInt())
-        val initialSector = data.position / encryptionData.sectorSize
-        val endSector = (data.position + size) / encryptionData.sectorSize
-        decryptSectors(buffer, initialSector, endSector, 0, 0)
-        return buffer
+        return if (off == out.size) out else out.copyOf(off)
     }
 
     override val position: Long
-        get() = data.position - encryptionData.offset
+        get() = cursor
 
     override val size: Long
         get() = encryptionData.size
 
     suspend fun getHashCode(): String {
-            val data = readFully()
-            val hash = MessageDigest.getInstance("SHA-512").digest(data)
-            val result = BigInteger(1, hash).toString(16).padStart(128, '0')
-            seek(0)
-            return result
-        }
+        val currentPos = position
+        val plain = readFully()
+        val hash = MessageDigest.getInstance("SHA-512").digest(plain)
+        val result = BigInteger(1, hash).toString(16).padStart(128, '0')
+        Arrays.fill(plain, 0)
+        seek(currentPos)
+        return result
+    }
 
     override suspend fun close() {
+        cache.clear()
         encryptionData.xts.close()
+        // Если underlying data здесь должен жить дольше volume, убери следующую строку.
+        data.close()
+    }
+
+    private suspend fun readCipherSector(sectorIndex: Long, out: ByteArray) {
+        require(out.size == sectorSize) { "Invalid sector buffer size: ${out.size}" }
+
+        cache.withSectorLock(sectorIndex) {
+            val cached = cache.getSector(sectorIndex)
+            if (cached != null) {
+                System.arraycopy(cached, 0, out, 0, sectorSize)
+                return@withSectorLock
+            }
+
+            val sectorPos = sectorIndex * sectorSize.toLong()
+            data.seek(sectorPos)
+            readExact(data, out, sectorSize)
+
+            // В репозитории храним только ciphertext
+            cache.putSector(sectorIndex, out)
+        }
+    }
+
+    private suspend fun writeCipherSector(sectorIndex: Long, src: ByteArray) {
+        require(src.size == sectorSize) { "Invalid sector buffer size: ${src.size}" }
+
+        cache.withSectorLock(sectorIndex) {
+            val sectorPos = sectorIndex * sectorSize.toLong()
+            data.seek(sectorPos)
+            data.write(src)
+
+            // В кэше тоже ciphertext
+            cache.putSector(sectorIndex, src)
+        }
+    }
+    private suspend fun readExact(data: RandomAccessData, out: ByteArray, len: Int) {
+        var off = 0
+        while (off < len) {
+            val tmp = ByteArray(len - off)
+            val n = data.read(tmp)
+            if (n <= 0) {
+                throw IOException("Incomplete sector read: expected=${len - off}, got=$n")
+            }
+            System.arraycopy(tmp, 0, out, off, n)
+            off += n
+            Arrays.fill(tmp, 0)
+        }
     }
 }
