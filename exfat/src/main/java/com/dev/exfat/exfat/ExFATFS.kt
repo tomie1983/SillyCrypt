@@ -1,6 +1,5 @@
 package com.dev.exfat.exfat
 
-
 import com.dev.exfat.data.RandomAccessData
 import com.dev.exfat.data.RandomAccessDataFactory
 import com.dev.exfat.exfat.bootregion.BootRegionOperator
@@ -10,8 +9,10 @@ import com.dev.exfat.exfat.bootregion.ExFatFileSystemMetadata
 import com.dev.exfat.exfat.cache.LruCache
 import com.dev.exfat.exfat.fat.FATOperator
 import com.dev.exfat.file.ExFATFile
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import java.util.concurrent.ConcurrentHashMap
 import kotlin.math.min
-
 
 class ExFATFS(private val dataFactory: RandomAccessDataFactory) {
     private val serviceData = dataFactory.create()
@@ -19,92 +20,272 @@ class ExFATFS(private val dataFactory: RandomAccessDataFactory) {
     private val bootRegionOperator = BootRegionOperator(serviceData)
     private val fatOperator = FATOperator(serviceData)
 
-    // -------------------- caches --------------------
+    /**
+     * serviceData is a shared RandomAccessData with mutable cursor,
+     * so all access to it must be serialized.
+     */
+    private val serviceDataMutex = Mutex()
 
+    /**
+     * Separate cache/init locks to avoid re-entrant deadlocks.
+     */
+    private val constantMetadataMutex = Mutex()
+    private val changingMetadataMutex = Mutex()
+    private val rootStateMutex = Mutex()
+    private val fatChainCacheMutex = Mutex()
+
+    /**
+     * Future write path:
+     * - FAT
+     * - Allocation Bitmap
+     * - BootRegion changing metadata
+     * - allocator state
+     */
+    private val allocationMutex = Mutex()
+
+    @Volatile
     private var constantMetadataCache: ExFatFIleSystemConstantMetadata? = null
-    private var changingMetadataCache: ExFatFileSystemChangingMetadata? = null
-    private var rootMetaCache: ExFatNodeMetadata? = null
 
+    @Volatile
+    private var changingMetadataCache: ExFatFileSystemChangingMetadata? = null
+
+    @Volatile
+    private var rootStateCache: NodeState? = null
 
     /** firstCluster -> full FAT chain (includes first cluster) */
     private val fatChainCache = LruCache<Int, IntArray>(512)
 
+    /**
+     * Registry no longer stores paths and no longer needs a global mutex.
+     */
+    private val nodeStateRegistry = ConcurrentHashMap<NodeId, NodeState>()
+
     // -------------------- metadata API --------------------
 
-    suspend fun isExFat(): Boolean = bootRegionOperator.isExFat(serviceData)
+    suspend fun isExFat(): Boolean {
+        return serviceDataMutex.withLock {
+            bootRegionOperator.isExFat(serviceData)
+        }
+    }
 
     suspend fun readConstantFileSystemMetadata(): ExFatFIleSystemConstantMetadata {
         constantMetadataCache?.let { return it }
-        return bootRegionOperator.readConstantFileSystemMetadata(serviceData)
-            .also { constantMetadataCache = it }
+
+        return constantMetadataMutex.withLock {
+            constantMetadataCache?.let { return@withLock it }
+
+            val loaded = serviceDataMutex.withLock {
+                bootRegionOperator.readConstantFileSystemMetadata(serviceData)
+            }
+
+            constantMetadataCache = loaded
+            loaded
+        }
     }
 
     suspend fun readChangingFileSystemMetadata(): ExFatFileSystemChangingMetadata {
         changingMetadataCache?.let { return it }
-        return bootRegionOperator.readChangingFileSystemMetadata(serviceData)
-            .also { changingMetadataCache = it }
+
+        return changingMetadataMutex.withLock {
+            changingMetadataCache?.let { return@withLock it }
+
+            val loaded = serviceDataMutex.withLock {
+                bootRegionOperator.readChangingFileSystemMetadata(serviceData)
+            }
+
+            changingMetadataCache = loaded
+            loaded
+        }
     }
 
     suspend fun readFullFileSystemMetadata(): ExFatFileSystemMetadata {
-        // intentionally not cached separately; it is usually cheap enough
-        return bootRegionOperator.readFullFileSystemMetadata(serviceData)
+        return serviceDataMutex.withLock {
+            bootRegionOperator.readFullFileSystemMetadata(serviceData)
+        }
     }
 
     // -------------------- public file API --------------------
 
-    /**
-     * Root directory as ExFATFile (RandomAccessData + metadata).
-     */
-    suspend fun root(): ExFATFile = ExFATFile(this, getRootMetadata())
+    suspend fun root(): ExFATFile {
+        val rootState = getRootState()
+        return ExFATFile(
+            fileSystem = this,
+            state = rootState,
+            displayName = "/",
+            displayPath = "/"
+        )
+    }
 
-    /**
-     * Lists root directory entries as files.
-     */
     suspend fun listRoot(): List<ExFATFile> = root().listFiles()
 
-    /**
-     * Returns file/dir by absolute path (e.g. "/", "/foo/bar.txt"), or null if not found.
-     * Only absolute paths are supported.
-     */
     suspend fun getFileFromPath(path: String): ExFATFile? {
         val normalized = normalizeAbsolutePath(path)
         if (normalized == "/") return root()
 
-
         val parts = splitAbsolutePath(normalized)
-        var current = getRootMetadata()
+        val lookupData = createDataHandle()
 
-        for (part in parts) {
-            if (!current.isDirectory) return null
+        try {
+            var currentState = getRootState()
+            var currentPath = "/"
 
-            val children = listDirectoryEntries(current, serviceData)
-            val next = children.firstOrNull { it.name == part } ?: return null
-            current = next
+            for (part in parts) {
+                val currentCore = currentState.snapshotCore()
+                if (!currentCore.isDirectory) return null
+
+                val children = listDirectoryEntries(currentState, lookupData)
+                val next = children.firstOrNull { it.name == part } ?: return null
+
+                currentState = internNodeState(
+                    nodeId = next.nodeId,
+                    core = next.core,
+                    entrySetLocation = next.entrySetLocation
+                )
+                currentPath = joinPath(currentPath, next.name)
+            }
+
+            val displayName = if (currentPath == "/") "/" else parts.last()
+            return ExFATFile(
+                fileSystem = this,
+                state = currentState,
+                displayName = displayName,
+                displayPath = currentPath
+            )
+        } finally {
+            lookupData.close()
         }
-
-        return ExFATFile(this, current)
     }
 
     suspend fun exists(path: String): Boolean = getFileFromPath(path) != null
 
     suspend fun close() {
+        nodeStateRegistry.clear()
+
+        fatChainCacheMutex.withLock {
+            fatChainCache.clear()
+        }
+
+        rootStateCache = null
+        constantMetadataCache = null
+        changingMetadataCache = null
         serviceData.close()
+        dataFactory.close()
+    }
+
+    // -------------------- internal live-state registry --------------------
+
+    private fun internNodeState(
+        nodeId: NodeId,
+        core: NodeCoreMetadata,
+        entrySetLocation: NodeEntrySetLocation?
+    ): NodeState {
+        val existing = nodeStateRegistry[nodeId]
+        if (existing != null) {
+            existing.update(core, entrySetLocation)
+            return existing
+        }
+
+        val created = NodeState(
+            nodeId = nodeId,
+            initialCore = core,
+            initialEntrySetLocation = entrySetLocation
+        )
+
+        val raced = nodeStateRegistry.putIfAbsent(nodeId, created)
+        return if (raced != null) {
+            raced.update(core, entrySetLocation)
+            raced
+        } else {
+            created
+        }
+    }
+
+    private suspend fun getRootState(): NodeState {
+        rootStateCache?.let { return it }
+
+        return rootStateMutex.withLock {
+            rootStateCache?.let { return@withLock it }
+
+            val c = readConstantFileSystemMetadata()
+            val rootCluster = c.rootDirFirstCluster
+
+            val tempData = createDataHandle()
+            try {
+                val rootChain = resolveFatChain(tempData, rootCluster.toInt())
+                val estimatedBytes = rootChain.size.toLong() * c.bytesPerCluster
+                val readable = min(estimatedBytes, MAX_ROOT_DIR_BYTES_SAFETY)
+
+                val rootCore = NodeCoreMetadata(
+                    isDirectory = true,
+                    attributes = ATTR_DIRECTORY,
+                    firstCluster = rootCluster,
+                    dataLength = readable,
+                    validDataLength = readable,
+                    readableLength = readable,
+                    streamFlags = 0,
+                    noFatChain = false
+                )
+
+                val rootState = internNodeState(
+                    nodeId = NodeId.Root,
+                    core = rootCore,
+                    entrySetLocation = null
+                )
+
+                rootStateCache = rootState
+                rootState
+            } finally {
+                tempData.close()
+            }
+        }
     }
 
     // -------------------- internal API used by handlers --------------------
 
     internal fun createDataHandle(): RandomAccessData = dataFactory.create()
 
+    internal suspend fun <T> withAllocationLock(action: suspend () -> T): T {
+        return allocationMutex.withLock { action() }
+    }
+
     internal suspend fun listDirectory(
-        fileMeta: ExFatNodeMetadata,
+        dirState: NodeState,
+        parentDisplayPath: String,
         data: RandomAccessData
     ): List<ExFATFile> {
-        require(fileMeta.isDirectory) { "Not a directory: ${fileMeta.path}" }
-        return listDirectoryEntries(fileMeta, data).map { ExFATFile(this, it) }
+        val dirCore = dirState.snapshotCore()
+        require(dirCore.isDirectory) { "Not a directory" }
+
+        return listDirectoryEntries(dirState, data).map { parsed ->
+            val childState = internNodeState(
+                nodeId = parsed.nodeId,
+                core = parsed.core,
+                entrySetLocation = parsed.entrySetLocation
+            )
+
+            val childDisplayPath = joinPath(parentDisplayPath, parsed.name)
+
+            ExFATFile(
+                fileSystem = this,
+                state = childState,
+                displayName = parsed.name,
+                displayPath = childDisplayPath
+            )
+        }
     }
 
     internal suspend fun readStreamRange(
-        meta: ExFatNodeMetadata,
+        state: NodeState,
+        position: Long,
+        buf: ByteArray,
+        data: RandomAccessData
+    ): Int {
+        val coreSnapshot = state.snapshotCore()
+        return readStreamRange(coreSnapshot, position, buf, data)
+    }
+
+    internal suspend fun readStreamRange(
+        core: NodeCoreMetadata,
         position: Long,
         buf: ByteArray,
         data: RandomAccessData
@@ -112,27 +293,23 @@ class ExFATFS(private val dataFactory: RandomAccessDataFactory) {
         if (buf.isEmpty()) return 0
         if (position < 0L) throw IllegalArgumentException("Negative position: $position")
 
-        val readableSize = meta.readableLength
-        if (position >= readableSize) return -1L.toInt()
+        val readableSize = core.readableLength
+        if (position >= readableSize) return -1
 
         val maxToRead = min(buf.size.toLong(), readableSize - position).toInt()
         if (maxToRead <= 0) return -1
 
-        if (maxToRead == 0) return 0
-
-        // Empty files/dirs are handled above via readableSize.
-        if (meta.firstCluster == 0L) {
-            // Corrupt case: non-empty but no first cluster.
-            throw IllegalStateException("Stream is non-empty but firstCluster == 0: ${meta.path}")
+        if (core.firstCluster == 0L) {
+            throw IllegalStateException("Stream is non-empty but firstCluster == 0")
         }
 
         val fsMeta = readConstantFileSystemMetadata()
         val bytesPerCluster = fsMeta.bytesPerCluster.toInt()
 
-        if (meta.noFatChain) {
+        if (core.noFatChain) {
             readContiguousRange(
                 data = data,
-                meta = meta,
+                core = core,
                 fsMeta = fsMeta,
                 position = position,
                 out = buf,
@@ -145,7 +322,7 @@ class ExFATFS(private val dataFactory: RandomAccessDataFactory) {
 
         readFatChainedRange(
             data = data,
-            meta = meta,
+            core = core,
             fsMeta = fsMeta,
             position = position,
             out = buf,
@@ -153,60 +330,34 @@ class ExFATFS(private val dataFactory: RandomAccessDataFactory) {
             len = maxToRead,
             bytesPerCluster = bytesPerCluster
         )
-        println(buf[0])
         return maxToRead
     }
 
     // -------------------- directory parsing --------------------
 
-    private suspend fun getRootMetadata(): ExFatNodeMetadata {
-        rootMetaCache?.let { return it }
-
-        val c = readConstantFileSystemMetadata()
-        val rootCluster = c.rootDirFirstCluster
-
-        // Root directory size is not stored in boot region like regular file entries.
-        // We estimate readable size as full FAT chain byte length (slack may be included).
-        val rootChain = resolveFatChain(serviceData, rootCluster.toInt())
-        val estimatedBytes = rootChain.size.toLong() * c.bytesPerCluster
-        val readable = min(estimatedBytes, MAX_ROOT_DIR_BYTES_SAFETY)
-
-        val rootMeta = ExFatNodeMetadata(
-            name = "",
-            path = "/",
-            isDirectory = true,
-            attributes = ATTR_DIRECTORY,
-            firstCluster = rootCluster,
-            dataLength = readable,
-            validDataLength = readable,
-            readableLength = readable,
-            streamFlags = 0,
-            noFatChain = false
-        )
-
-        rootMetaCache = rootMeta
-        return rootMeta
-    }
-
     private suspend fun listDirectoryEntries(
-        dirMeta: ExFatNodeMetadata,
+        dirState: NodeState,
         data: RandomAccessData
-    ): List<ExFatNodeMetadata> {
-        require(dirMeta.isDirectory) { "Not a directory: ${dirMeta.path}" }
-        if (dirMeta.readableLength == 0L) return emptyList()
-        val dirBytes = readAllReadableBytes(dirMeta, data)
-        val parsed = parseDirectory(dirBytes, dirMeta.path)
-        return parsed
+    ): List<ParsedDirectoryNode> {
+        val dirCore = dirState.snapshotCore()
+        require(dirCore.isDirectory) { "Not a directory" }
+        if (dirCore.readableLength == 0L) return emptyList()
+
+        val dirBytes = readAllReadableBytes(dirCore, data)
+        val parentCluster = dirCore.firstCluster
+        return parseDirectory(dirBytes, parentCluster)
     }
 
-    private fun parseDirectory(dirBytes: ByteArray, parentPath: String): List<ExFatNodeMetadata> {
-        val out = mutableListOf<ExFatNodeMetadata>()
+    private fun parseDirectory(
+        dirBytes: ByteArray,
+        parentDirFirstCluster: Long
+    ): List<ParsedDirectoryNode> {
+        val out = mutableListOf<ParsedDirectoryNode>()
 
         var i = 0
         while (i + DIR_ENTRY_SIZE <= dirBytes.size) {
             val entryTypeRaw = u8(dirBytes[i])
 
-            // 0x00 => end of directory entries
             if (entryTypeRaw == 0x00) break
 
             val inUse = (entryTypeRaw and 0x80) != 0
@@ -218,6 +369,7 @@ class ExFATFS(private val dataFactory: RandomAccessDataFactory) {
             }
 
             if (entryType == TYPE_FILE_DIR_ENTRY) {
+                val primaryEntryOffset = i.toLong()
                 val secondaryCount = u8(dirBytes[i + 1])
                 val fileAttributes = u16le(dirBytes, i + 4)
                 val isDir = (fileAttributes and ATTR_DIRECTORY) != 0
@@ -226,22 +378,26 @@ class ExFATFS(private val dataFactory: RandomAccessDataFactory) {
                 val secondariesEnd = secondariesStart + secondaryCount * DIR_ENTRY_SIZE
 
                 if (secondariesEnd <= dirBytes.size) {
-                    val (stream, name) = parseSecondariesForFile(
-                        dirBytes,
-                        secondariesStart,
-                        secondaryCount
+                    val secondaryInfo = parseSecondariesForFile(
+                        bytes = dirBytes,
+                        start = secondariesStart,
+                        secondaryCount = secondaryCount
                     )
+
+                    val stream = secondaryInfo.stream
+                    val name = secondaryInfo.name
 
                     if (!name.isNullOrEmpty() && stream != null) {
                         val dataLength = stream.dataLength
                         val validDataLength = stream.validDataLength
                         val readableLength = min(validDataLength, dataLength).coerceAtLeast(0L)
 
-                        val childPath = joinPath(parentPath, name)
+                        val nodeId = NodeId.DirectoryEntry(
+                            parentDirFirstCluster = parentDirFirstCluster,
+                            primaryEntryOffsetInParentBytes = primaryEntryOffset
+                        )
 
-                        out += ExFatNodeMetadata(
-                            name = name,
-                            path = childPath,
+                        val core = NodeCoreMetadata(
                             isDirectory = isDir,
                             attributes = fileAttributes,
                             firstCluster = stream.firstCluster,
@@ -251,6 +407,19 @@ class ExFATFS(private val dataFactory: RandomAccessDataFactory) {
                             streamFlags = stream.flags,
                             noFatChain = (stream.flags and STREAM_FLAG_NO_FAT_CHAIN) != 0
                         )
+
+                        val entrySetLocation = NodeEntrySetLocation(
+                            primaryEntryOffsetInParentBytes = primaryEntryOffset,
+                            streamEntryOffsetInParentBytes = stream.streamEntryOffsetInParentBytes,
+                            fileNameEntryOffsetsInParentBytes = secondaryInfo.fileNameEntryOffsetsInParentBytes.toLongArray()
+                        )
+
+                        out += ParsedDirectoryNode(
+                            nodeId = nodeId,
+                            name = name,
+                            core = core,
+                            entrySetLocation = entrySetLocation
+                        )
                     }
                 }
 
@@ -258,29 +427,43 @@ class ExFATFS(private val dataFactory: RandomAccessDataFactory) {
                 continue
             }
 
-            // Other entry types ignored for now (bitmap, upcase, volume label, etc.)
             i += DIR_ENTRY_SIZE
         }
 
         return out
     }
 
+    private data class ParsedDirectoryNode(
+        val nodeId: NodeId,
+        val name: String,
+        val core: NodeCoreMetadata,
+        val entrySetLocation: NodeEntrySetLocation
+    )
+
     private data class StreamExt(
         val nameLength: Int,
         val flags: Int,
         val validDataLength: Long,
         val firstCluster: Long,
-        val dataLength: Long
+        val dataLength: Long,
+        val streamEntryOffsetInParentBytes: Long
+    )
+
+    private data class SecondaryParseResult(
+        val stream: StreamExt?,
+        val name: String?,
+        val fileNameEntryOffsetsInParentBytes: MutableList<Long>
     )
 
     private fun parseSecondariesForFile(
         bytes: ByteArray,
         start: Int,
         secondaryCount: Int
-    ): Pair<StreamExt?, String?> {
+    ): SecondaryParseResult {
         var stream: StreamExt? = null
         val nameChars = StringBuilder()
         var expectedNameLen = -1
+        val fileNameOffsets = mutableListOf<Long>()
 
         var offset = start
         for (k in 0 until secondaryCount) {
@@ -308,21 +491,31 @@ class ExFATFS(private val dataFactory: RandomAccessDataFactory) {
                         flags = flags,
                         validDataLength = validDataLength,
                         firstCluster = firstCluster,
-                        dataLength = dataLength
+                        dataLength = dataLength,
+                        streamEntryOffsetInParentBytes = offset.toLong()
                     )
                     expectedNameLen = nameLength
                 }
 
                 TYPE_FILE_NAME -> {
-                    val s =
-                        decodeUtf16Le(bytes, offset + FILE_NAME_UTF16_OFFSET, FILE_NAME_UTF16_BYTES)
+                    fileNameOffsets += offset.toLong()
+
+                    val s = decodeUtf16Le(
+                        bytes,
+                        offset + FILE_NAME_UTF16_OFFSET,
+                        FILE_NAME_UTF16_BYTES
+                    )
                     nameChars.append(s)
 
                     if (expectedNameLen >= 0 && nameChars.length >= expectedNameLen) {
                         val finalName = nameChars.toString()
                             .take(expectedNameLen)
                             .trimEnd('\u0000')
-                        return stream to finalName
+                        return SecondaryParseResult(
+                            stream = stream,
+                            name = finalName,
+                            fileNameEntryOffsetsInParentBytes = fileNameOffsets
+                        )
                     }
                 }
             }
@@ -336,19 +529,23 @@ class ExFATFS(private val dataFactory: RandomAccessDataFactory) {
             nameChars.toString().trimEnd('\u0000')
         }
 
-        return stream to finalName.takeIf { it.isNotEmpty() }
+        return SecondaryParseResult(
+            stream = stream,
+            name = finalName.takeIf { it.isNotEmpty() },
+            fileNameEntryOffsetsInParentBytes = fileNameOffsets
+        )
     }
 
     // -------------------- stream reading helpers --------------------
 
     private suspend fun readAllReadableBytes(
-        meta: ExFatNodeMetadata,
+        core: NodeCoreMetadata,
         data: RandomAccessData
     ): ByteArray {
-        val len = meta.readableLength
+        val len = core.readableLength
         if (len == 0L) return ByteArray(0)
         if (len > Int.MAX_VALUE.toLong()) {
-            throw IllegalStateException("Stream too large to materialize in memory: ${meta.path}, len=$len")
+            throw IllegalStateException("Stream too large to materialize in memory: len=$len")
         }
 
         val out = ByteArray(len.toInt())
@@ -356,7 +553,7 @@ class ExFATFS(private val dataFactory: RandomAccessDataFactory) {
         var pos = 0L
         while (offset < out.size) {
             val tmp = ByteArray(out.size - offset)
-            val n = readStreamRange(meta, pos, tmp, data)
+            val n = readStreamRange(core, pos, tmp, data)
             if (n <= 0) break
 
             System.arraycopy(tmp, 0, out, offset, n)
@@ -367,12 +564,9 @@ class ExFATFS(private val dataFactory: RandomAccessDataFactory) {
         return if (offset == out.size) out else out.copyOf(offset)
     }
 
-    /**
-     * Reads contiguous (NoFatChain) stream data.
-     */
     private suspend fun readContiguousRange(
         data: RandomAccessData,
-        meta: ExFatNodeMetadata,
+        core: NodeCoreMetadata,
         fsMeta: ExFatFIleSystemConstantMetadata,
         position: Long,
         out: ByteArray,
@@ -380,10 +574,9 @@ class ExFATFS(private val dataFactory: RandomAccessDataFactory) {
         len: Int,
         bytesPerCluster: Int
     ) {
-        val firstCluster = meta.firstCluster
+        val firstCluster = core.firstCluster
         if (firstCluster < CLUSTERS_OFFSET) {
-            // Empty files may have firstCluster=0 but they should never reach here (len > 0).
-            throw IllegalStateException("Invalid first cluster for contiguous stream: $firstCluster, path=${meta.path}")
+            throw IllegalStateException("Invalid first cluster for contiguous stream: $firstCluster")
         }
 
         var remaining = len
@@ -406,12 +599,9 @@ class ExFATFS(private val dataFactory: RandomAccessDataFactory) {
         }
     }
 
-    /**
-     * Reads FAT-chained stream data.
-     */
     private suspend fun readFatChainedRange(
         data: RandomAccessData,
-        meta: ExFatNodeMetadata,
+        core: NodeCoreMetadata,
         fsMeta: ExFatFIleSystemConstantMetadata,
         position: Long,
         out: ByteArray,
@@ -419,13 +609,15 @@ class ExFATFS(private val dataFactory: RandomAccessDataFactory) {
         len: Int,
         bytesPerCluster: Int
     ) {
-        val firstCluster = meta.firstCluster
+        val firstCluster = core.firstCluster
         if (firstCluster < CLUSTERS_OFFSET) {
-            throw IllegalStateException("Invalid first cluster for FAT stream: $firstCluster, path=${meta.path}")
+            throw IllegalStateException("Invalid first cluster for FAT stream: $firstCluster")
         }
 
-        val chain = resolveFatChain(data, firstCluster.toInt())
-        if (chain.isEmpty()) throw IllegalStateException("Empty FAT chain for non-empty stream: ${meta.path}")
+        val chain = resolveFatChain(data, firstCluster.toInt(), core.readableLength)
+        if (chain.isEmpty()) {
+            throw IllegalStateException("Empty FAT chain for non-empty stream")
+        }
 
         var remaining = len
         var dst = outOffset
@@ -436,10 +628,8 @@ class ExFATFS(private val dataFactory: RandomAccessDataFactory) {
             val inClusterOffset = (streamPos % bytesPerCluster).toInt()
 
             if (clusterIndex >= chain.size) {
-                // Corrupt metadata/FAT mismatch
                 throw IllegalStateException(
-                    "FAT chain shorter than expected for ${meta.path}: " +
-                            "clusterIndex=$clusterIndex chainSize=${chain.size}"
+                    "FAT chain shorter than expected: clusterIndex=$clusterIndex chainSize=${chain.size}"
                 )
             }
 
@@ -467,56 +657,55 @@ class ExFATFS(private val dataFactory: RandomAccessDataFactory) {
         val bytesPerCluster = fsMeta.bytesPerCluster.toInt()
         val clusterByte =
             fsMeta.heapStartByte + (cluster.toLong() - CLUSTERS_OFFSET) * fsMeta.bytesPerCluster
-        val bytes = readAt(data, clusterByte, bytesPerCluster)
-        return bytes
+        return readAt(data, clusterByte, bytesPerCluster)
     }
 
-    private suspend fun resolveFatChain(data: RandomAccessData, firstCluster: Int): IntArray {
-        fatChainCache[firstCluster]?.let { return it }
+    private suspend fun resolveFatChain(
+        data: RandomAccessData,
+        firstCluster: Int,
+        readableLength: Long? = null
+    ): IntArray {
+        fatChainCacheMutex.withLock {
+            fatChainCache[firstCluster]?.let { return it }
+        }
 
         val fsMeta = readConstantFileSystemMetadata()
+        val bytesPerCluster = fsMeta.bytesPerCluster
+        val maxSteps = readableLength?.let {
+            ((readableLength + bytesPerCluster - 1) / bytesPerCluster)
+                .coerceAtLeast(1)
+                .coerceAtMost(Int.MAX_VALUE.toLong())
+                .toInt()
+        } ?: DEFAULT_WALK_LIMIT
+
         val chain = fatOperator.walkChain(
             data = data,
             firstCluster = firstCluster,
             fatStartByte = fsMeta.fatStartByte,
-            maxSteps = DEFAULT_WALK_LIMIT
+            maxSteps = maxSteps
         )
 
-        fatChainCache[firstCluster] = chain
+        fatChainCacheMutex.withLock {
+            fatChainCache[firstCluster] = chain
+        }
         return chain
     }
-
-    internal data class ExFatNodeMetadata(
-        val name: String,
-        val path: String,
-        val isDirectory: Boolean,
-        val attributes: Int,
-        val firstCluster: Long,
-        val dataLength: Long,
-        val validDataLength: Long,
-        val readableLength: Long,   // min(validDataLength, dataLength)
-        val streamFlags: Int,
-        val noFatChain: Boolean
-    )
 
     companion object {
         private const val DIR_ENTRY_SIZE = 32
         internal const val  MB = 1024 * 1024
 
-        // entry types without "in-use" bit (0x80)
-        private const val TYPE_FILE_DIR_ENTRY = 0x05 // 0x85 on disk
-        private const val TYPE_STREAM_EXT = 0x40     // 0xC0 on disk
-        private const val TYPE_FILE_NAME = 0x41      // 0xC1 on disk
+        private const val TYPE_FILE_DIR_ENTRY = 0x05
+        private const val TYPE_STREAM_EXT = 0x40
+        private const val TYPE_FILE_NAME = 0x41
 
         private const val FILE_NAME_UTF16_OFFSET = 2
         private const val FILE_NAME_UTF16_BYTES = 30
 
         private const val CLUSTERS_OFFSET = 2
 
-        // attributes
         private const val ATTR_DIRECTORY = 0x0010
 
-        // Stream Extension GeneralSecondaryFlags bits
         private const val STREAM_FLAG_NO_FAT_CHAIN = 0x02
 
         private const val DEFAULT_WALK_LIMIT = 1_000_000

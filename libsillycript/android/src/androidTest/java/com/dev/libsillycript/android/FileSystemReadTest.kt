@@ -115,7 +115,9 @@ class FileSystemReadTest {
         val actualHashes = linkedMapOf<String, String>()
 
         // Act
-        EXFatVolumesManager.get(fs).getFileFromPath("/")?.use { root ->
+        EXFatVolumesManager
+            .get(fs)
+            .getFileFromPath("/")?.use { root ->
             collectTree(
                 file = root,
                 directoriesOut = actualDirectories,

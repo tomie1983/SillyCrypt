@@ -147,9 +147,6 @@ class BaseVeracryptVolume(
 
     override suspend fun close() {
         cache.clear()
-        encryptionData.xts.close()
-        // Если underlying data здесь должен жить дольше volume, убери следующую строку.
-        data.close()
     }
 
     private suspend fun readCipherSector(sectorIndex: Long, out: ByteArray) {

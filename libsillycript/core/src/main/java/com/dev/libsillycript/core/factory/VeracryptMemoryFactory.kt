@@ -6,6 +6,7 @@ import com.dev.exfat.data.RandomAccessDataFactory
 import com.dev.libsillycript.core.cache.SharedSectorCache
 import com.dev.libsillycript.core.volumes.BaseVeracryptVolume
 import com.dev.libsillycript.core.volumes.EncryptionData
+import kotlinx.coroutines.runBlocking
 
 class VeracryptMemoryFactory(
     private val byteArray: ByteArray,
@@ -17,4 +18,5 @@ class VeracryptMemoryFactory(
             MemoryRandomAccessData(byteArray), cache, encryptionData)
     }
 
+    override suspend fun close() = encryptionData.xts.close()
 }

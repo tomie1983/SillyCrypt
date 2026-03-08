@@ -2,18 +2,26 @@ package com.dev.exfat.file
 
 import com.dev.exfat.data.RandomAccessData
 import com.dev.exfat.exfat.ExFATFS
+import com.dev.exfat.exfat.NodeState
 
 class ExFATFileHandler internal constructor(
     private val fileSystem: ExFATFS,
-    private val meta: ExFATFS.ExFatNodeMetadata
+    private val state: NodeState,
+    private val displayPath: String
 ) : RandomAccessData {
 
     private val data: RandomAccessData = fileSystem.createDataHandle()
     private var cursor: Long = 0L
 
     suspend fun listFiles(): List<ExFATFile> {
-        require(meta.isDirectory) { "Not a directory: ${meta.path}" }
-        return fileSystem.listDirectory(meta, data)
+        val core = state.snapshotCore()
+        require(core.isDirectory) { "Not a directory" }
+
+        return fileSystem.listDirectory(
+            dirState = state,
+            parentDisplayPath = displayPath,
+            data = data
+        )
     }
 
     override fun seek(pos: Long) {
@@ -22,18 +30,15 @@ class ExFATFileHandler internal constructor(
     }
 
     override suspend fun read(buf: ByteArray): Int {
-        val n = fileSystem.readStreamRange(meta, cursor, buf, data)
+        val n = fileSystem.readStreamRange(state, cursor, buf, data)
         if (n > 0) cursor += n
         return n
     }
 
     override suspend fun write(buf: ByteArray) {
-        throw UnsupportedOperationException("Read-only implementation for now")
+        throw UnsupportedOperationException("Write support is not implemented yet")
     }
 
-    /**
-     * Reads remaining readable bytes [cursor, size), where size == validDataLength (clamped to dataLength).
-     */
     override suspend fun readFully(): ByteArray {
         val remaining = (size - cursor).coerceAtLeast(0L)
         if (remaining == 0L) return ByteArray(0)
@@ -59,7 +64,7 @@ class ExFATFileHandler internal constructor(
     }
 
     override val size: Long
-        get() = meta.readableLength
+        get() = state.snapshotCore().readableLength
 
     override val position: Long
         get() = cursor

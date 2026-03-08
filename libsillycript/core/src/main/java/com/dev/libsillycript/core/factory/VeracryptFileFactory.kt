@@ -6,6 +6,7 @@ import com.dev.exfat.data.RandomAccessDataFactory
 import com.dev.libsillycript.core.cache.SharedSectorCache
 import com.dev.libsillycript.core.volumes.BaseVeracryptVolume
 import com.dev.libsillycript.core.volumes.EncryptionData
+import kotlinx.coroutines.runBlocking
 import java.io.File
 
 class VeracryptFileFactory(
@@ -15,5 +16,9 @@ class VeracryptFileFactory(
 ): RandomAccessDataFactory {
     override fun create(): RandomAccessData {
         return BaseVeracryptVolume(FileRandomAccessData(file), cache, encryptionData)
+    }
+
+    override suspend fun close() {
+        encryptionData.xts.close()
     }
 }
