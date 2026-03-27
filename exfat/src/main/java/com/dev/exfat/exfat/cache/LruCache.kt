@@ -13,5 +13,7 @@ class LruCache<K, V>(private val maxSize: Int) {
         map[key] = value
     }
 
+    fun remove(key: K): V? = map.remove(key)
+
     fun clear() = map.clear()
 }

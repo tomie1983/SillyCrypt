@@ -11,7 +11,7 @@ class ExFATFile internal constructor(
     private val displayPath: String
 ) : RandomAccessData {
 
-    private val handler: ExFATFileHandler = ExFATFileHandler(
+    private val handler = ExFATFileHandler(
         fileSystem = fileSystem,
         state = state,
         displayPath = displayPath
@@ -42,6 +42,19 @@ class ExFATFile internal constructor(
         get() = state.snapshotCore().noFatChain
 
     suspend fun listFiles(): List<ExFATFile> = handler.listFiles()
+
+    /**
+     * Opens a seekable handle for this file.
+     *
+     * Directories are rejected because this API is meant for regular-file style access,
+     * including future MediaProvider integration.
+     */
+    fun openSeekable(
+        options: SeekableOpenOptions = SeekableOpenOptions.readOnly()
+    ): ExFATSeekableFile {
+        require(!isDirectory) { "Seekable file access is not supported for directories: $displayPath" }
+        return fileSystem.openSeekable(state, displayPath, options)
+    }
 
     override fun seek(pos: Long) = handler.seek(pos)
 

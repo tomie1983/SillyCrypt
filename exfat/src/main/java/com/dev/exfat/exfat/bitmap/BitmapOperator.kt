@@ -33,7 +33,7 @@ internal class BitmapOperator(private val writeableData: RandomAccessData) {
         requireValidCluster(cluster, clusterCount)
 
         val (bytePos, bitMask) = locateBit(bitmapStartByte, cluster)
-        val b = readAt(data, bytePos, 1)[0].toInt() and 0xFF
+        val b = readAt(data, bytePos, 1)[0].toInt() and 0xFF // беззнаковый байт
         return (b and bitMask) != 0
     }
 
@@ -223,7 +223,7 @@ internal class BitmapOperator(private val writeableData: RandomAccessData) {
         for (byte in bytes) {
             if (remainingBits <= 0) break
 
-            val value = byte.toInt() and 0xFF
+            val value = byte.toInt() and 0xFF  // беззнаковый байт
             val validBitsInByte = min(8, remainingBits)
             allocated += countSetBits(value and validBitMask(validBitsInByte))
             remainingBits -= validBitsInByte
@@ -277,13 +277,13 @@ internal class BitmapOperator(private val writeableData: RandomAccessData) {
         while (remaining > 0) {
             val clusterIndex = currentCluster - CLUSTERS_OFFSET
             val byteIndex = clusterIndex ushr 3
-            val bitIndex = clusterIndex and 7
+            val bitIndex = clusterIndex and 7 // %8
             val bitsLeftInByte = 8 - bitIndex
             val takeBits = min(remaining, bitsLeftInByte)
 
             val bytePos = bitmapStartByte + byteIndex.toLong()
-            val oldValue = readAt(writeableData, bytePos, 1)[0].toInt() and 0xFF
-            val mask = (((1 shl takeBits) - 1) shl bitIndex) and 0xFF
+            val oldValue = readAt(writeableData, bytePos, 1)[0].toInt() and 0xFF // беззнаковый байт
+            val mask = (((1 shl takeBits) - 1) shl bitIndex) and 0xFF // беззнаковый байт
             val newValue = if (allocated) {
                 oldValue or mask
             } else {
@@ -305,11 +305,11 @@ internal class BitmapOperator(private val writeableData: RandomAccessData) {
         set: Boolean
     ) {
         val (bytePos, bitMask) = locateBit(bitmapStartByte, cluster)
-        val oldValue = readAt(writeableData, bytePos, 1)[0].toInt() and 0xFF
+        val oldValue = readAt(writeableData, bytePos, 1)[0].toInt() and 0xFF // беззнаковый байт
         val newValue = if (set) {
-            oldValue or bitMask
+            oldValue or bitMask // установка в 1 только нужного бита
         } else {
-            oldValue and bitMask.inv()
+            oldValue and bitMask.inv() // установка в 0 только нужного бита
         }
 
         if (newValue != oldValue) {
@@ -368,7 +368,7 @@ internal class BitmapOperator(private val writeableData: RandomAccessData) {
         ) { cluster, allocated ->
             if (!allocated) {
                 out += cluster
-                if (out.size >= limit) return@forEachClusterBit
+                if (out.size >= limit) return
             }
         }
     }
@@ -398,10 +398,10 @@ internal class BitmapOperator(private val writeableData: RandomAccessData) {
 
         for (localByteIndex in 0 until byteCount) {
             val globalByteIndex = startByteIndex + localByteIndex
-            val value = bytes[localByteIndex].toInt() and 0xFF
+            val value = bytes[localByteIndex].toInt() and 0xFF // беззнаковый байт
 
-            val firstBit = if (globalByteIndex == startByteIndex) fromIndex and 7 else 0
-            val lastBit = if (globalByteIndex == endByteIndex) toIndex and 7 else 7
+            val firstBit = if (globalByteIndex == startByteIndex) fromIndex and 7 else 0 // %8
+            val lastBit = if (globalByteIndex == endByteIndex) toIndex and 7 else 7 // %8
 
             for (bit in firstBit..lastBit) {
                 val clusterIndex = (globalByteIndex shl 3) + bit
@@ -415,7 +415,9 @@ internal class BitmapOperator(private val writeableData: RandomAccessData) {
     private fun locateBit(bitmapStartByte: Long, cluster: Int): Pair<Long, Int> {
         val clusterIndex = cluster - CLUSTERS_OFFSET
         val bytePos = bitmapStartByte + (clusterIndex ushr 3).toLong()
-        val bitMask = 1 shl (clusterIndex and 7)
+        val bitMask = 1 shl (
+                clusterIndex and 7 // %8
+        ) // маска, где только нужный бит равен 1
         return bytePos to bitMask
     }
 

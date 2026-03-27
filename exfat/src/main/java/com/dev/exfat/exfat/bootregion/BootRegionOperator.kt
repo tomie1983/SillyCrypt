@@ -2,6 +2,7 @@ package com.dev.exfat.exfat.bootregion
 
 import com.dev.exfat.data.RandomAccessData
 import com.dev.exfat.exfat.putU16le
+import com.dev.exfat.exfat.putU32le
 import com.dev.exfat.exfat.readAt
 import com.dev.exfat.exfat.u16le
 import com.dev.exfat.exfat.u32le
@@ -12,35 +13,57 @@ import kotlinx.coroutines.sync.withLock
 
 internal class BootRegionOperator(private val writeableData: RandomAccessData) {
 
+    private val metaMutex = Mutex()
     private var constantMetadata: ExFatFIleSystemConstantMetadata? = null
 
     suspend fun isExFat(data: RandomAccessData): Boolean {
-        val boot = readAt(data, 0, BOOT_SECTOR_SIZE)
-        try {
+        return try {
+            val boot = readBootSector(data, 0L)
             checkExFAT(boot)
-            return true
+            true
         } catch (_: IllegalArgumentException) {
-            return false
+            false
         }
     }
 
     suspend fun readFullFileSystemMetadata(data: RandomAccessData): ExFatFileSystemMetadata {
-        val boot = readAt(data, 0, BOOT_SECTOR_SIZE)
+        val boot = readBootSector(data, 0L)
         val changingMetadata = parseOrThrowChangingMetadata(boot)
-        val constantMetadata = constantMetadata?: parseOrThrowConstantMetadata(boot)
+        val constantMetadata = constantMetadata ?: parseOrThrowConstantMetadata(boot).also {
+            constantMetadata = it
+        }
         return ExFatFileSystemMetadata(constantMetadata, changingMetadata)
     }
 
     private fun checkExFAT(boot: ByteArray) {
-        require(boot.size >= BOOT_SECTOR_SIZE)
+        require(boot.size >= MIN_BOOT_HEADER_SIZE) {
+            "Boot sector too small: ${boot.size}"
+        }
 
-        // exFAT filesystem name at offset 3, length 8: "EXFAT   "
         val fsName = boot.copyOfRange(3, 11).toString(Charsets.US_ASCII)
         if (fsName != "EXFAT   ") throw IllegalArgumentException("Not exFAT (fsName=$fsName)")
 
-        // Signature at end: 0x55AA
-        val sig = u16le(boot, 510)
+        val sigOffset = boot.size - 2
+        val sig = u16le(boot, sigOffset)
         if (sig != 0xAA55) throw IllegalArgumentException("Bad signature (0x${sig.toString(16)})")
+    }
+
+    private suspend fun readBootSector(data: RandomAccessData, sector0OffsetBytes: Long): ByteArray {
+        val header = readAt(data, sector0OffsetBytes, MIN_BOOT_HEADER_SIZE)
+        require(header.size >= MIN_BOOT_HEADER_SIZE) {
+            "Boot header too small: ${header.size}"
+        }
+
+        val bytesPerSector = 1 shl u8(header[0x6C])
+        require(bytesPerSector in SUPPORTED_BYTES_PER_SECTOR) {
+            "Unsupported bytesPerSector=$bytesPerSector"
+        }
+
+        return if (bytesPerSector == MIN_BOOT_HEADER_SIZE) {
+            header
+        } else {
+            readAt(data, sector0OffsetBytes, bytesPerSector)
+        }
     }
 
     private fun parseOrThrowConstantMetadata(boot: ByteArray): ExFatFIleSystemConstantMetadata {
@@ -89,30 +112,36 @@ internal class BootRegionOperator(private val writeableData: RandomAccessData) {
     suspend fun updateChangingMetadata(
         updateBackupBoot: Boolean = true,
         transform: (ExFatFileSystemChangingMetadata) -> ExFatFileSystemChangingMetadata
-    ): ExFatFileSystemChangingMetadata {
-        val boot = readAt(writeableData, 0, BOOT_SECTOR_SIZE)
-        checkExFAT(boot)
+    ): ExFatFileSystemChangingMetadata = metaMutex.withLock {
+        val constMeta = readConstantFileSystemMetadata(writeableData)
+        val bytesPerSector = constMeta.bytesPerSector
 
-        val current = parseOrThrowChangingMetadata(boot)
+        val mainBoot = readBootSector(writeableData, 0L)
+        checkExFAT(mainBoot)
+
+        val current = parseOrThrowChangingMetadata(mainBoot)
         val next = transform(current)
+        require(next.volumeFlags in 0..0xFFFF) { "volumeFlags out of range: ${next.volumeFlags}" }
+        require(next.percentInUse in 0..100) { "percentInUse out of range: ${next.percentInUse}" }
 
-        // Patch sector 0
-        writeChangingFieldsIntoBootSector(boot, next)
-        writeAt(writeableData, 0, boot)
+        writeChangingFieldsIntoBootSector(mainBoot, next)
+        writeAt(writeableData, 0L, mainBoot)
+        rewriteBootChecksumSector(regionStartOffsetBytes = 0L, bytesPerSector = bytesPerSector)
 
-        // Patch backup boot sector 12 as well (recommended)
         if (updateBackupBoot) {
-            val bytesPerSector = readConstantFileSystemMetadata(writeableData).bytesPerSector
-            val backupBoot0Offset = BOOT_REGION_SIZE * bytesPerSector.toLong()
-            val backupBoot = readAt(writeableData, backupBoot0Offset, BOOT_SECTOR_SIZE)
-            // Only patch if backup looks like exFAT too (don’t brick weird images)
+            val backupBoot0Offset = BOOT_REGION_SIZE_SECTORS * bytesPerSector.toLong()
+            val backupBoot = readBootSector(writeableData, backupBoot0Offset)
             if (runCatching { checkExFAT(backupBoot) }.isSuccess) {
                 writeChangingFieldsIntoBootSector(backupBoot, next)
                 writeAt(writeableData, backupBoot0Offset, backupBoot)
+                rewriteBootChecksumSector(
+                    regionStartOffsetBytes = backupBoot0Offset,
+                    bytesPerSector = bytesPerSector
+                )
             }
         }
 
-        return next
+        next
     }
 
     suspend fun setVolumeFlags(volumeFlags: Int, updateBackupBoot: Boolean = true): ExFatFileSystemChangingMetadata {
@@ -121,56 +150,87 @@ internal class BootRegionOperator(private val writeableData: RandomAccessData) {
     }
 
     suspend fun setPercentInUse(percent: Int, updateBackupBoot: Boolean = true): ExFatFileSystemChangingMetadata {
-        require(percent in 0..100) // по spec это 0..100 (иногда 0xFF как unknown; если надо — расширишь)
+        require(percent in 0..100)
         return updateChangingMetadata(updateBackupBoot) { it.copy(percentInUse = percent) }
     }
 
-    /**
-     * Convenience: set/clear the "dirty" flag in volumeFlags (bit layout зависит от spec/драйвера).
-     * Обычно dirty = bit0 (0x0001) — но проверь под твой сценарий.
-     */
     suspend fun setDirty(isDirty: Boolean, updateBackupBoot: Boolean = true): ExFatFileSystemChangingMetadata {
         return updateChangingMetadata(updateBackupBoot) { cur ->
             val dirtyMask = 0x0001
-            val vf = if (isDirty) (cur.volumeFlags or dirtyMask) else (cur.volumeFlags and dirtyMask.inv())
+            val vf = if (isDirty) {
+                cur.volumeFlags or dirtyMask
+            } else {
+                cur.volumeFlags and dirtyMask.inv()
+            }
             cur.copy(volumeFlags = vf)
         }
     }
 
-    /**
-     * If you ever perform operations that effectively "reformat/resize" (rare),
-     * you MUST clear cached constant metadata.
-     */
-    suspend fun invalidateConstantMetadataCache() { constantMetadata = null }
-
+    suspend fun invalidateConstantMetadataCache() {
+        metaMutex.withLock {
+            constantMetadata = null
+        }
+    }
 
     private fun writeChangingFieldsIntoBootSector(boot: ByteArray, meta: ExFatFileSystemChangingMetadata) {
-        // volumeFlags u16le at 0x6A
         putU16le(boot, 0x6A, meta.volumeFlags)
-        // percentInUse u8 at 0x70
         boot[0x70] = (meta.percentInUse and 0xFF).toByte()
     }
 
-    // ----------------------------
-    // Existing reads (optional)
-    // ----------------------------
+    private suspend fun rewriteBootChecksumSector(regionStartOffsetBytes: Long, bytesPerSector: Int): Int {
+        val regionBytes = readAt(
+            writeableData,
+            regionStartOffsetBytes,
+            CHECKSUM_INPUT_SECTORS * bytesPerSector
+        )
+        val checksum = computeBootRegionChecksum(regionBytes, regionStart = 0, bytesPerSector = bytesPerSector)
+        val checksumSector = ByteArray(bytesPerSector)
+        writeBootChecksumSector(checksumSector, sectorIndex = 0, bytesPerSector = bytesPerSector, checksum = checksum)
+        val checksumSectorOffset = regionStartOffsetBytes + CHECKSUM_INPUT_SECTORS * bytesPerSector.toLong()
+        writeAt(writeableData, checksumSectorOffset, checksumSector)
+        return checksum
+    }
+
+    private fun computeBootRegionChecksum(bytes: ByteArray, regionStart: Int, bytesPerSector: Int): Int {
+        var sum = 0
+        val total = CHECKSUM_INPUT_SECTORS * bytesPerSector
+
+        for (i in 0 until total) {
+            if (i == 0x6A || i == 0x6B || i == 0x70) continue
+
+            val v = bytes[regionStart + i].toInt() and 0xFF
+            sum = (sum ushr 1) or (sum shl 31)
+            sum += v
+        }
+        return sum
+    }
+
+    private fun writeBootChecksumSector(out: ByteArray, sectorIndex: Int, bytesPerSector: Int, checksum: Int) {
+        val off = sectorIndex * bytesPerSector
+        var p = off
+        while (p < off + bytesPerSector) {
+            putU32le(out, p, checksum)
+            p += 4
+        }
+    }
 
     suspend fun readConstantFileSystemMetadata(data: RandomAccessData): ExFatFIleSystemConstantMetadata {
         constantMetadata?.let { return it }
-        val boot = readAt(data, 0L, BOOT_SECTOR_SIZE)
+        val boot = readBootSector(data, 0L)
         val meta = parseOrThrowConstantMetadata(boot)
         constantMetadata = meta
         return meta
     }
 
     suspend fun readChangingFileSystemMetadata(data: RandomAccessData): ExFatFileSystemChangingMetadata {
-        val boot = readAt(data, 0L, BOOT_SECTOR_SIZE)
+        val boot = readBootSector(data, 0L)
         return parseOrThrowChangingMetadata(boot)
     }
 
-
     companion object {
-        private const val BOOT_SECTOR_SIZE = 512
-        private const val BOOT_REGION_SIZE = 12
+        private const val MIN_BOOT_HEADER_SIZE = 512
+        private const val BOOT_REGION_SIZE_SECTORS = 12
+        private const val CHECKSUM_INPUT_SECTORS = 11
+        private val SUPPORTED_BYTES_PER_SECTOR = setOf(512, 1024, 2048, 4096)
     }
 }

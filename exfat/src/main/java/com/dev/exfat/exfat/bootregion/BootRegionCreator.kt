@@ -11,15 +11,15 @@ import com.dev.exfat.exfat.writeAt
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
-internal class BootRegionCreator(private val data: RandomAccessData) {
+class BootRegionCreator(private val data: RandomAccessData) {
 
     private val metaMutex = Mutex()
 
     suspend fun createBootRegions(
         volumeLengthBytes: Long = data.size,
-        bytesPerSectorShift: Int = 9,         // 512 bytes
-        sectorsPerClusterShift: Int = 3,      // 8 sectors -> 4096-byte cluster (with 512B sectors)
-        numberOfFats: Int = 1,
+        bytesPerSectorShift: Int = BYTES_PER_SECTOR_SHIFT,         // 512 bytes
+        sectorsPerClusterShift: Int = SECTORS_PER_CLUSTER_SHIFT,      // 8 sectors -> 4096-byte cluster (with 512B sectors)
+        numberOfFats: Int = NUMBER_OF_FATS,
         volumeSerial: Long = (System.currentTimeMillis().toInt().toLong() and 0xFFFF_FFFFL),
         fsRevision: Int = 0x0100,
         volumeFlags: Int = 0,
@@ -167,58 +167,11 @@ internal class BootRegionCreator(private val data: RandomAccessData) {
     // Layout calc (VeraCrypt-like)
     // ----------------------------
 
-    private data class LayoutResult(
+    data class LayoutResult(
         val fatLengthSectors: Int,
         val heapOffsetSectors: Int,
         val clusterCount: Int
     )
-
-    private fun computeLayoutVeraCryptLike(
-        volumeLengthSectors: Long,
-        bytesPerSector: Int,
-        sectorsPerCluster: Int,
-        numberOfFats: Int,
-        fatOffsetSectors: Int,
-        alignmentSectors: Int
-    ): LayoutResult {
-        // initial guess: assume heap starts at 2MiB => safe-ish
-        var clusterCount = ((volumeLengthSectors - (2L * alignmentSectors)) / sectorsPerCluster.toLong())
-            .toInt()
-            .coerceAtLeast(1)
-
-        var fatLength: Int
-        var heapOffset: Int
-
-        repeat(ITERATIONS_LIMIT) {
-            val fatEntries = clusterCount + 2 // FAT has entries from 0; data clusters start at 2
-            val fatBytes = fatEntries.toLong() * 4L
-            val fatSectors = ceilDiv(fatBytes, bytesPerSector.toLong()).toInt()
-
-            // VeraCrypt/Windows behavior: FAT length aligned to cluster boundary (your dump: 6 -> 8)
-            fatLength = alignUp(fatSectors, sectorsPerCluster)
-
-            val fatEnd = fatOffsetSectors + numberOfFats * fatLength
-
-            // VeraCrypt/Windows behavior: heap aligned to 1MiB boundary (your dump: 2056 -> 4096)
-            heapOffset = alignUp(fatEnd, alignmentSectors)
-
-            val newClusterCount = ((volumeLengthSectors - heapOffset.toLong()) / sectorsPerCluster.toLong())
-                .toInt()
-                .coerceAtLeast(0)
-
-            if (newClusterCount == clusterCount) {
-                require(clusterCount > 0) { "Volume too small after layout" }
-                return LayoutResult(
-                    fatLengthSectors = fatLength,
-                    heapOffsetSectors = heapOffset,
-                    clusterCount = clusterCount
-                )
-            }
-            clusterCount = newClusterCount
-        }
-
-        throw IllegalStateException("Failed to converge layout for exFAT")
-    }
 
     // ----------------------------
     // Boot region writing helpers
@@ -332,5 +285,119 @@ internal class BootRegionCreator(private val data: RandomAccessData) {
 
     companion object {
         private const val ITERATIONS_LIMIT = 64
+
+        private const val BYTES_PER_SECTOR_SHIFT = 9
+
+        private const val SECTORS_PER_CLUSTER_SHIFT = 3
+
+        private const val NUMBER_OF_FATS = 1
+
+        private fun computeLayoutVeraCryptLike(
+            volumeLengthSectors: Long,
+            bytesPerSector: Int,
+            sectorsPerCluster: Int,
+            numberOfFats: Int,
+            fatOffsetSectors: Int,
+            alignmentSectors: Int
+        ): LayoutResult {
+            // initial guess: assume heap starts at 2MiB => safe-ish
+            var clusterCount = ((volumeLengthSectors - (2L * alignmentSectors)) / sectorsPerCluster.toLong())
+                .toInt()
+                .coerceAtLeast(1)
+
+            var fatLength: Int
+            var heapOffset: Int
+
+            repeat(ITERATIONS_LIMIT) {
+                val fatEntries = clusterCount + 2 // FAT has entries from 0; data clusters start at 2
+                val fatBytes = fatEntries.toLong() * 4L
+                val fatSectors = ceilDiv(fatBytes, bytesPerSector.toLong()).toInt()
+
+                // VeraCrypt/Windows behavior: FAT length aligned to cluster boundary (your dump: 6 -> 8)
+                fatLength = alignUp(fatSectors, sectorsPerCluster)
+
+                val fatEnd = fatOffsetSectors + numberOfFats * fatLength
+
+                // VeraCrypt/Windows behavior: heap aligned to 1MiB boundary (your dump: 2056 -> 4096)
+                heapOffset = alignUp(fatEnd, alignmentSectors)
+
+                val newClusterCount = ((volumeLengthSectors - heapOffset.toLong()) / sectorsPerCluster.toLong())
+                    .toInt()
+                    .coerceAtLeast(0)
+
+                if (newClusterCount == clusterCount) {
+                    require(clusterCount > 0) { "Volume too small after layout" }
+                    return LayoutResult(
+                        fatLengthSectors = fatLength,
+                        heapOffsetSectors = heapOffset,
+                        clusterCount = clusterCount
+                    )
+                }
+                clusterCount = newClusterCount
+            }
+
+            throw IllegalStateException("Failed to converge layout for exFAT")
+        }
+
+        fun computeFirstUserDataByte(
+            volumeLengthBytes: Long,
+            bytesPerSectorShift: Int = BYTES_PER_SECTOR_SHIFT,        // 512 bytes
+            sectorsPerClusterShift: Int = SECTORS_PER_CLUSTER_SHIFT,     // 8 sectors -> 4096-byte cluster
+            numberOfFats: Int = NUMBER_OF_FATS,
+        ): Long {
+            require(numberOfFats == 1 || numberOfFats == 2)
+
+            val bytesPerSector = 1 shl bytesPerSectorShift
+            require(bytesPerSector in setOf(512, 1024, 2048, 4096)) {
+                "Unsupported bytesPerSector=$bytesPerSector"
+            }
+
+            val sectorsPerCluster = 1 shl sectorsPerClusterShift
+            require(sectorsPerCluster > 0) { "sectorsPerCluster must be > 0" }
+
+            require(volumeLengthBytes % bytesPerSector.toLong() == 0L) {
+                "volumeLengthBytes must be multiple of bytesPerSector"
+            }
+
+            val volumeLengthSectors = volumeLengthBytes / bytesPerSector.toLong()
+            require(volumeLengthSectors > 0) { "Volume too small" }
+
+            val alignmentSectors = (MB / bytesPerSector.toLong()).toInt()
+            require(alignmentSectors > 0 && MB % bytesPerSector.toLong() == 0L) {
+                "1MiB must be divisible by bytesPerSector"
+            }
+
+            val layout = computeLayoutVeraCryptLike(
+                volumeLengthSectors = volumeLengthSectors,
+                bytesPerSector = bytesPerSector,
+                sectorsPerCluster = sectorsPerCluster,
+                numberOfFats = numberOfFats,
+                fatOffsetSectors = alignmentSectors,
+                alignmentSectors = alignmentSectors
+            )
+
+            val bytesPerCluster = bytesPerSector.toLong() * sectorsPerCluster.toLong()
+
+            // Allocation bitmap: 1 bit per cluster in heap
+            val bitmapBytes = ceilDiv(layout.clusterCount.toLong(), 8L)
+            val bitmapClusters = ceilDiv(bitmapBytes, bytesPerCluster).toInt().coerceAtLeast(1)
+
+            // Full upcase table: 65536 UTF-16 code units
+            val upcaseBytes = 65536L * 2L
+            val upcaseClusters = ceilDiv(upcaseBytes, bytesPerCluster).toInt().coerceAtLeast(1)
+
+            // Root dir occupies 1 cluster and starts right after bitmap + upcase
+            val rootDirFirstCluster = 2 + bitmapClusters + upcaseClusters
+            require(rootDirFirstCluster <= layout.clusterCount + 1) {
+                "Volume too small: rootDirFirstCluster=$rootDirFirstCluster, clusterCount=${layout.clusterCount}"
+            }
+
+            val heapStartByte = layout.heapOffsetSectors.toLong() * bytesPerSector.toLong()
+
+            // First non-service cluster = cluster right after root directory cluster
+            val firstUserDataCluster = rootDirFirstCluster + 1
+
+            return heapStartByte + (firstUserDataCluster - 2L) * bytesPerCluster
+        }
     }
 }

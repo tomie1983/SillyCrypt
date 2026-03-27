@@ -1,8 +1,12 @@
 package com.dev.libsillycript.android
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.dev.libsillycript.core.VeracryptData
+import com.dev.libsillycript.core.VeracryptMode
+import com.dev.libsillycript.core.VeracryptOpeningData
 import com.dev.libsillycript.core.blockCiphers.BlockCipherType
 import com.dev.libsillycript.core.cache.SharedSectorCache
+import com.dev.libsillycript.core.fs.FsType
 import com.dev.libsillycript.core.kdfs.KDFType
 import com.dev.libsillycript.core.utils.use
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -42,9 +46,11 @@ class BaseVeracryptVolumeCacheTest {
         AndroidVeracryptMaster(MutableStateFlow(100))
             .openRaw(
                 outerFile,
-                "abc".toCharArray(),
-                KDFType.PBKDF2,
-                listOf(BlockCipherType.AES),
+                VeracryptMode.OpenNormal(VeracryptOpeningData(
+                    "abc".toCharArray(),
+                    KDFType.PBKDF2,
+                    listOf(BlockCipherType.AES))
+                ),
             )
             .use { volume ->
                 val first = ByteArray(128)
@@ -80,9 +86,9 @@ class BaseVeracryptVolumeCacheTest {
         AndroidVeracryptMaster(MutableStateFlow(100))
             .openRaw(
                 outerFile,
-                "abc".toCharArray(),
+                VeracryptMode.OpenNormal(VeracryptOpeningData("abc".toCharArray(),
                 KDFType.PBKDF2,
-                listOf(BlockCipherType.AES),
+                listOf(BlockCipherType.AES))),
                 cache = cache
             )
             .use { volume1 ->
@@ -95,9 +101,9 @@ class BaseVeracryptVolumeCacheTest {
                 AndroidVeracryptMaster(MutableStateFlow(100))
                     .openRaw(
                         outerFile,
-                        "abc".toCharArray(),
+                        VeracryptMode.OpenNormal(VeracryptOpeningData("abc".toCharArray(),
                         KDFType.PBKDF2,
-                        listOf(BlockCipherType.AES),
+                        listOf(BlockCipherType.AES))),
                         cache = cache
                     )
                     .use { volume2 ->
@@ -126,9 +132,9 @@ class BaseVeracryptVolumeCacheTest {
         AndroidVeracryptMaster(MutableStateFlow(100))
             .openRaw(
                 outerFile,
-                "abc".toCharArray(),
+                VeracryptMode.OpenNormal(VeracryptOpeningData("abc".toCharArray(),
                 KDFType.PBKDF2,
-                listOf(BlockCipherType.AES),
+                listOf(BlockCipherType.AES))),
             )
             .use { volume ->
                 val original = ByteArray(32)
@@ -165,9 +171,9 @@ class BaseVeracryptVolumeCacheTest {
         AndroidVeracryptMaster(MutableStateFlow(100))
             .openRaw(
                 outerFile,
-                "abc".toCharArray(),
+                VeracryptMode.OpenNormal(VeracryptOpeningData("abc".toCharArray(),
                 KDFType.PBKDF2,
-                listOf(BlockCipherType.AES),
+                listOf(BlockCipherType.AES))),
             )
             .use { volume ->
                 val before = ByteArray(512)
@@ -211,20 +217,28 @@ class BaseVeracryptVolumeCacheTest {
         plainSize: Int,
         fillByte: Byte
     ) {
-        AndroidVeracryptMaster(MutableStateFlow(100)).create(
+        AndroidVeracryptMaster(MutableStateFlow(100)).createRaw(
             outerFile,
-            plainSize.toLong(),"abc".toCharArray(),
-            listOf(BlockCipherType.AES),
-            KDFType.PBKDF2,
+            listOf(VeracryptData(
+                plainSize.toLong(),
+                VeracryptOpeningData(
+                    "abc".toCharArray(),
+                    KDFType.PBKDF2,
+                    listOf(BlockCipherType.AES),
+                ),
+                FsType.ExFAT,
+                0
+            )
+            ),
         )
 
         AndroidVeracryptMaster(MutableStateFlow(100))
             .openRaw(
                 outerFile,
-                "abc".toCharArray(),
+                VeracryptMode.OpenNormal(VeracryptOpeningData("abc".toCharArray(),
                 KDFType.PBKDF2,
                 listOf(BlockCipherType.AES)
-            )
+            )))
             .use { volume ->
                 val data = ByteArray(volume.size.toInt()) { fillByte }
                 volume.seek(0)

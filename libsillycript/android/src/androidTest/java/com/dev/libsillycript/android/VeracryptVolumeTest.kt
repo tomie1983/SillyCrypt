@@ -5,6 +5,8 @@ import android.content.Context
 import android.util.Log
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import com.dev.libsillycript.core.VeracryptMode
+import com.dev.libsillycript.core.VeracryptOpeningData
 import com.dev.libsillycript.core.blockCiphers.BlockCipherType
 import com.dev.libsillycript.core.kdfs.KDFType
 import com.dev.libsillycript.core.utils.use
@@ -70,9 +72,9 @@ class VeracryptVolumeTest {
     fun openNormalVolume_hashMatches() = runTest {
         AndroidVeracryptMaster(MutableStateFlow(100)).openRaw(
             normalFile,
-            "abc".toCharArray(),
+            VeracryptMode.OpenNormal(VeracryptOpeningData("abc".toCharArray(),
             KDFType.PBKDF2,
-            listOf(BlockCipherType.AES)).use { vol ->
+            listOf(BlockCipherType.AES)))).use { vol ->
             Log.w("hashcode", "start")
             val actual = vol.getHashCode()
             Log.w("hashcode", "end")
@@ -84,9 +86,9 @@ class VeracryptVolumeTest {
     fun openOuterVolume_hashMatches() = runTest {
         AndroidVeracryptMaster(MutableStateFlow(100)).openRaw(
             outerFile,
-            "abc".toCharArray(),
+            VeracryptMode.OpenNormal(VeracryptOpeningData("abc".toCharArray(),
             KDFType.PBKDF2,
-            listOf(BlockCipherType.AES)).use { vol ->
+            listOf(BlockCipherType.AES)))).use { vol ->
             val actual = vol.getHashCode()
             assertEquals("SHA-512 hash mismatch for outer volume", EXPECTED_OUTER_HASH, actual)
         }
@@ -96,10 +98,9 @@ class VeracryptVolumeTest {
     fun openHiddenVolume_hashMatches() = runTest {
         AndroidVeracryptMaster(MutableStateFlow(100)).openRaw(
             outerFile,
-            "abcd".toCharArray(),
+            VeracryptMode.OpenHidden(VeracryptOpeningData("abcd".toCharArray(),
             KDFType.PBKDF2,
-            listOf(BlockCipherType.AES),
-            isHidden = true
+            listOf(BlockCipherType.AES)))
         ).use { vol ->
             val actual = vol.getHashCode()
             assertEquals("SHA-512 hash mismatch for hidden volume", EXPECTED_HIDDEN_HASH, actual)
@@ -112,9 +113,9 @@ class VeracryptVolumeTest {
     fun wrongPassword_throwsSecurityException() = runTest {
         AndroidVeracryptMaster(MutableStateFlow(100)).openRaw(
             normalFile,
-            "wrong".toCharArray(),
+            VeracryptMode.OpenNormal(VeracryptOpeningData("wrong".toCharArray(),
             KDFType.PBKDF2,
-            listOf(BlockCipherType.AES)
+            listOf(BlockCipherType.AES)))
         ).close()
     }
 
@@ -128,9 +129,9 @@ class VeracryptVolumeTest {
 
             AndroidVeracryptMaster(MutableStateFlow(100)).openRaw(
                 tmp,
-                "abc".toCharArray(),
+                VeracryptMode.OpenNormal(VeracryptOpeningData("abc".toCharArray(),
                 KDFType.PBKDF2,
-                listOf(BlockCipherType.AES)).use { vol ->
+                listOf(BlockCipherType.AES)))).use { vol ->
                 val sectorSize = vol.size.coerceAtMost(4096).toInt()
                 val dataToWrite = Random.nextBytes(128)
                 val offset = 2L * sectorSize

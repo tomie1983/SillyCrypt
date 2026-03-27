@@ -36,7 +36,7 @@ class ExFATFileHandler internal constructor(
     }
 
     override suspend fun write(buf: ByteArray) {
-        throw UnsupportedOperationException("Write support is not implemented yet")
+        throw UnsupportedOperationException("Read-only implementation for now")
     }
 
     override suspend fun readFully(): ByteArray {

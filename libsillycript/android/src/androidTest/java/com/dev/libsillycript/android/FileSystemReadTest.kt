@@ -5,6 +5,8 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.dev.exfat.exfat.EXFatVolumesManager
 import com.dev.exfat.file.ExFATFile
+import com.dev.libsillycript.core.VeracryptMode
+import com.dev.libsillycript.core.VeracryptOpeningData
 import com.dev.libsillycript.core.blockCiphers.BlockCipherType
 import com.dev.libsillycript.core.fs.FsType
 import com.dev.libsillycript.core.kdfs.KDFType
@@ -26,9 +28,6 @@ import java.security.Security
 @RunWith(AndroidJUnit4::class)
 class FileSystemReadTest {
     companion object {
-
-        private const val EXPECTED_OUTER_HASH  =
-            "35d248353b6ec70320d7e69ea521f0bcd6102312ceb5d2173ba1a9accef2e3df49eaacb45011c31b01a349bb028d8f7f0e1d3448a4e4acb3b0ddf0077e5d175e"
 
         private val mapOfHashes: Map<String, String> = buildMap {
             put("/Raptile feat. Da Liones - Hands up (Форсаж 6).mp3", "7c2e9c92ddaf01212371604a611e1a5280654b551bc440a447263c1b820432af43c5fcdcb5d6ca92017767332b71cac034672a67ce1c3f5e800e7d9fb5a6cc1d")
@@ -87,11 +86,11 @@ class FileSystemReadTest {
     fun openOuterVolume_hashMatches() = runTest {
         val fs = AndroidVeracryptMaster(MutableStateFlow(100)).open(
             normalFile,
-            "abc".toCharArray(),
+            VeracryptMode.OpenNormal(VeracryptOpeningData("abc".toCharArray(),
             KDFType.PBKDF2,
-            FsType.ExFAT,
-            listOf(BlockCipherType.AES))
-        EXFatVolumesManager.get(fs).getFileFromPath("/").use { file ->
+            listOf(BlockCipherType.AES))),
+            FsType.ExFAT)
+            EXFatVolumesManager.get(fs).getFileFromPath("/").use { file ->
             println(file == null)
             println(file?.isDirectory)
             file?.listFiles()?.forEach {
@@ -105,10 +104,10 @@ class FileSystemReadTest {
         // Arrange
         val fs = AndroidVeracryptMaster(MutableStateFlow(100)).open(
             mainFIle,
-            "abc".toCharArray(),
+            VeracryptMode.OpenNormal(VeracryptOpeningData("abc".toCharArray(),
             KDFType.PBKDF2,
+            listOf(BlockCipherType.AES))),
             FsType.ExFAT,
-            listOf(BlockCipherType.AES)
         )
 
         val actualDirectories = linkedSetOf<String>()

@@ -59,9 +59,9 @@ class VeracryptVolumeTest {
     fun openNormalVolume_hashMatches() = runTest {
         VeraCryptMaster(KeyStoreFactoryUnsafeImpl()).openRaw(
             normalFile,
-            "abc".toCharArray(),
+            VeracryptMode.OpenNormal(VeracryptOpeningData("abc".toCharArray(),
             KDFType.PBKDF2,
-            listOf(BlockCipherType.AES)).use { vol ->
+            listOf(BlockCipherType.AES)))).use { vol ->
             val actual = vol.getHashCode()
             assertEquals("SHA-512 hash mismatch for normal volume", EXPECTED_NORMAL_HASH, actual)
         }
@@ -71,9 +71,9 @@ class VeracryptVolumeTest {
     fun openOuterVolume_hashMatches() = runTest {
         VeraCryptMaster(KeyStoreFactoryUnsafeImpl()).openRaw(
             outerFile,
-            "abc".toCharArray(),
+            VeracryptMode.OpenNormal(VeracryptOpeningData("abc".toCharArray(),
             KDFType.PBKDF2,
-            listOf(BlockCipherType.AES)).use { vol ->
+            listOf(BlockCipherType.AES)))).use { vol ->
             val actual = vol.getHashCode()
             assertEquals("SHA-512 hash mismatch for outer volume", EXPECTED_OUTER_HASH, actual)
         }
@@ -83,10 +83,9 @@ class VeracryptVolumeTest {
     fun openHiddenVolume_hashMatches() = runTest {
         VeraCryptMaster(KeyStoreFactoryUnsafeImpl()).openRaw(
             outerFile,
-            "abcd".toCharArray(),
+            VeracryptMode.OpenHidden(VeracryptOpeningData("abcd".toCharArray(),
             KDFType.PBKDF2,
-            listOf(BlockCipherType.AES),
-            isHidden = true
+            listOf(BlockCipherType.AES))),
         ).use { vol ->
             val actual = vol.getHashCode()
             assertEquals("SHA-512 hash mismatch for hidden volume", EXPECTED_HIDDEN_HASH, actual)
@@ -99,9 +98,9 @@ class VeracryptVolumeTest {
     fun wrongPassword_throwsSecurityException() = runTest {
         VeraCryptMaster(KeyStoreFactoryUnsafeImpl()).openRaw(
             normalFile,
-            "wrong".toCharArray(),
+            VeracryptMode.OpenNormal(VeracryptOpeningData("wrong".toCharArray(),
             KDFType.PBKDF2,
-            listOf(BlockCipherType.AES)
+            listOf(BlockCipherType.AES)))
         ).close()
     }
 
@@ -117,9 +116,9 @@ class VeracryptVolumeTest {
 
             VeraCryptMaster(KeyStoreFactoryUnsafeImpl()).openRaw(
                 tmp,
-                "abc".toCharArray(),
+                VeracryptMode.OpenNormal(VeracryptOpeningData("abc".toCharArray(),
                 KDFType.PBKDF2,
-                listOf(BlockCipherType.AES)).use { vol ->
+                listOf(BlockCipherType.AES)))).use { vol ->
                 val sectorSize = vol.size.coerceAtMost(4096).toInt()
                 val dataToWrite = Random.nextBytes(128)
                 val offset = 2L * sectorSize

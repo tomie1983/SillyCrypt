@@ -1,5 +1,6 @@
 package com.dev.exfat.exfat
 
+import kotlinx.coroutines.sync.Mutex
 import java.util.concurrent.locks.ReentrantReadWriteLock
 import kotlin.concurrent.read
 import kotlin.concurrent.write
@@ -25,20 +26,20 @@ internal data class NodeCoreMetadata(
 )
 
 internal data class NodeEntrySetLocation(
+    val parentDirFirstCluster: Long,
+    val parentDirNoFatChain: Boolean,
     val primaryEntryOffsetInParentBytes: Long,
     val streamEntryOffsetInParentBytes: Long?,
     val fileNameEntryOffsetsInParentBytes: LongArray
 )
 
 /**
- * Live node state kept in registry.
+ * Live node state stored in the filesystem registry.
  *
- * Security:
- * - contains no names or absolute paths
- *
- * Concurrency:
- * - multiple readers may snapshot metadata concurrently
- * - future write transactions will update metadata under write lock
+ * Important:
+ * - contains no file name and no absolute path
+ * - keeps only technical metadata and physical entry-set location
+ * - [writeMutex] serializes future write transactions on one file
  */
 internal class NodeState(
     val nodeId: NodeId,
@@ -49,6 +50,8 @@ internal class NodeState(
 
     private var currentCore: NodeCoreMetadata = initialCore
     private var currentEntrySetLocation: NodeEntrySetLocation? = initialEntrySetLocation
+
+    val writeMutex: Mutex = Mutex()
 
     fun snapshotCore(): NodeCoreMetadata = rwLock.read { currentCore }
 
@@ -64,7 +67,7 @@ internal class NodeState(
         }
     }
 
-    inline fun <T> withReadLock(action: () -> T): T = rwLock.read(action)
+    fun <T> withReadLock(action: () -> T): T = rwLock.read(action)
 
-    inline fun <T> withWriteLock(action: () -> T): T = rwLock.write(action)
+    fun <T> withWriteLock(action: () -> T): T = rwLock.write(action)
 }

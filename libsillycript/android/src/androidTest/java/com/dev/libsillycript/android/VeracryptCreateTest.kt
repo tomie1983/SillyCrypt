@@ -6,6 +6,11 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.dev.libsillycript.core.blockCiphers.BlockCipherType
 import com.dev.libsillycript.core.kdfs.KDFType
 import com.dev.exfat.data.FileRandomAccessData
+import com.dev.libsillycript.core.VeraCryptMaster.Companion.HIDDEN_HEADER_DEFAULT_INDEX
+import com.dev.libsillycript.core.VeracryptData
+import com.dev.libsillycript.core.VeracryptMode
+import com.dev.libsillycript.core.VeracryptOpeningData
+import com.dev.libsillycript.core.fs.FsType
 import com.dev.libsillycript.core.utils.use
 import junit.framework.TestCase
 import junit.framework.TestCase.assertTrue
@@ -61,23 +66,31 @@ class VeracryptCreateTest {
         val sizeBytes = 5 * 1024 * 1024L // 5 MB
 
         // 1) create ----------------------------------------------------------
-        FileRandomAccessData(scratch).use { rad ->
-            AndroidVeracryptMaster(MutableStateFlow(100)).create(
-                output = rad,
-                size = sizeBytes,
-                password = OUTER_PWD.toCharArray(),
-                ciphers = listOf(BlockCipherType.AES),
-                kdf = KDFType.PBKDF2
-            )
-        }
+
+        AndroidVeracryptMaster(MutableStateFlow(100)).createRaw(
+            file = scratch,
+            data = listOf(
+                VeracryptData(
+                    sizeBytes,
+                    VeracryptOpeningData(
+                        OUTER_PWD.toCharArray(),
+                        KDFType.PBKDF2,
+                        listOf(BlockCipherType.AES)
+                    ),
+                    FsType.ExFAT,
+                    0
+                )
+            ),
+        )
+
         assertTrue("Container not written", scratch.length() > 0)
 
         // 2) open & verify read/write ---------------------------------------
         AndroidVeracryptMaster(MutableStateFlow(100)).openRaw(
             scratch,
-            OUTER_PWD.toCharArray(),
+            VeracryptMode.OpenNormal(VeracryptOpeningData(OUTER_PWD.toCharArray(),
             KDFType.PBKDF2,
-            listOf(BlockCipherType.AES)
+            listOf(BlockCipherType.AES)))
         ).use { vol ->
             // basic invariants
             assertTrue("volume.size must be <= container size", vol.size <= sizeBytes)
@@ -107,24 +120,40 @@ class VeracryptCreateTest {
         val hiddenSize = 2 * 1024 * 1024L // dedicated hidden payload
 
         // 1) create ----------------------------------------------------------
-        FileRandomAccessData(scratch).use { rad ->
-            AndroidVeracryptMaster(MutableStateFlow(100)).create(
-                output = rad,
-                size = outerSize,
-                password = OUTER_PWD.toCharArray(),
-                ciphers = listOf(BlockCipherType.AES),
-                kdf = KDFType.PBKDF2,
-                hiddenSize = hiddenSize,
-                hiddenPassword = HIDDEN_PWD.toCharArray()
-            )
-        }
+
+        AndroidVeracryptMaster(MutableStateFlow(100)).createRaw(
+            file = scratch,
+            data = listOf(
+                VeracryptData(
+                    outerSize,
+                    VeracryptOpeningData(
+                        OUTER_PWD.toCharArray(),
+                        KDFType.PBKDF2,
+                        listOf(BlockCipherType.AES)
+                    ),
+                    FsType.ExFAT,
+                    0
+                ),
+                VeracryptData(
+                    hiddenSize,
+                    VeracryptOpeningData(
+                        HIDDEN_PWD.toCharArray(),
+                        KDFType.PBKDF2,
+                        listOf(BlockCipherType.AES)
+                    ),
+                    FsType.ExFAT,
+                    HIDDEN_HEADER_DEFAULT_INDEX
+                )
+            ),
+        )
+
 
         // 2-A) open *outer* --------------------------------------------------
         AndroidVeracryptMaster(MutableStateFlow(100)).openRaw(
             scratch,
-            OUTER_PWD.toCharArray(),
+            VeracryptMode.OpenNormal(VeracryptOpeningData(OUTER_PWD.toCharArray(),
             KDFType.PBKDF2,
-            listOf(BlockCipherType.AES)).use { outer ->
+            listOf(BlockCipherType.AES)))).use { outer ->
             val txt = "Hello outer!".toByteArray()
             outer.seek(512) // keep far away from hidden
             outer.write(txt)
@@ -137,10 +166,10 @@ class VeracryptCreateTest {
         // 2-B) open *hidden* -------------------------------------------------
         AndroidVeracryptMaster(MutableStateFlow(100)).openRaw(
             scratch,
-            HIDDEN_PWD.toCharArray(),
+            VeracryptMode.OpenHidden(VeracryptOpeningData(HIDDEN_PWD.toCharArray(),
             KDFType.PBKDF2,
-            listOf(BlockCipherType.AES),
-            isHidden = true).use { hidden ->
+            listOf(BlockCipherType.AES)))
+        ).use { hidden ->
             val txt = "Hello hidden!".toByteArray()
             hidden.seek(0) // safe – hidden header lies before this
             hidden.write(txt)
@@ -160,21 +189,29 @@ class VeracryptCreateTest {
         val sizeBytes = 2 * 1024 * 1024L
 
         // create 2 MB outer-only container
-        FileRandomAccessData(scratch).use { rad ->
-            AndroidVeracryptMaster(MutableStateFlow(100)).create(
-                output = rad,
-                size = sizeBytes,
-                password = OUTER_PWD.toCharArray(),
-                ciphers = listOf(BlockCipherType.AES),
-                kdf = KDFType.PBKDF2
-            )
-        }
+
+        AndroidVeracryptMaster(MutableStateFlow(100)).createRaw(
+            file = scratch,
+            data = listOf(
+                VeracryptData(
+                    size = sizeBytes,
+                    veracryptOpeningData = VeracryptOpeningData(
+                        OUTER_PWD.toCharArray(),
+                        KDFType.PBKDF2,
+                        listOf(BlockCipherType.AES)
+                    ),
+                    fsType = FsType.ExFAT,
+                    0
+                )
+            ),
+        )
+
 
         AndroidVeracryptMaster(MutableStateFlow(100)).openRaw(
             scratch,
-            OUTER_PWD.toCharArray(),
+            VeracryptMode.OpenNormal(VeracryptOpeningData(OUTER_PWD.toCharArray(),
             KDFType.PBKDF2,
-            listOf(BlockCipherType.AES)).use { vol ->
+            listOf(BlockCipherType.AES)))).use { vol ->
             vol.seek(vol.size - 512)
             val overflow = ByteArray(1024) // deliberately crosses boundary
             vol.write(overflow)            // should throw RuntimeException
