@@ -1,11 +1,13 @@
 package com.dev.libsillycript.android
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.dev.exfat.data.FileRandomAccessData
 import com.dev.libsillycript.core.VeracryptData
 import com.dev.libsillycript.core.VeracryptMode
 import com.dev.libsillycript.core.VeracryptOpeningData
 import com.dev.libsillycript.core.blockCiphers.BlockCipherType
 import com.dev.libsillycript.core.cache.SharedSectorCache
+import com.dev.libsillycript.core.factory.UsualFileFactory
 import com.dev.libsillycript.core.fs.FsType
 import com.dev.libsillycript.core.kdfs.KDFType
 import com.dev.libsillycript.core.utils.use
@@ -218,7 +220,7 @@ class BaseVeracryptVolumeCacheTest {
         fillByte: Byte
     ) {
         AndroidVeracryptMaster(MutableStateFlow(100)).createRaw(
-            outerFile,
+            factory = UsualFileFactory(outerFile),
             listOf(VeracryptData(
                 plainSize.toLong(),
                 VeracryptOpeningData(

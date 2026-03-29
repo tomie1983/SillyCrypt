@@ -1,4 +1,4 @@
-package com.dev.sillycrypt.theme
+package com.dev.sillycrypt.presentation.theme
 
 import androidx.compose.ui.graphics.Color
 

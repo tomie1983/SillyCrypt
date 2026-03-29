@@ -18,7 +18,10 @@ import kotlinx.coroutines.sync.withLock
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.math.min
 
-class ExFATFS(private val dataFactory: RandomAccessDataFactory) {
+class ExFATFS(
+    private val dataFactory: RandomAccessDataFactory,
+    val name: String
+) {
     private val serviceData = dataFactory.create()
 
     private val bootRegionOperator = BootRegionOperator(serviceData)

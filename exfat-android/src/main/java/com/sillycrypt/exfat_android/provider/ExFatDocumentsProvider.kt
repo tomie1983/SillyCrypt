@@ -26,14 +26,14 @@ class ExFatDocumentsProvider : DocumentsProvider() {
 
     override fun queryRoots(projection: Array<out String>?): Cursor {
         val result = MatrixCursor(resolveRootProjection(projection))
-        val volumeIds = EXFatVolumesManager.activeVolumes.value.sorted()
+        val volumeIds = EXFatVolumesManager.activeVolumes.value
 
         for (volumeId in volumeIds) {
             result.newRow().apply {
-                add(DocumentsContract.Root.COLUMN_ROOT_ID, volumeId)
-                add(DocumentsContract.Root.COLUMN_DOCUMENT_ID, buildDocumentId(volumeId, "/"))
+                add(DocumentsContract.Root.COLUMN_ROOT_ID, volumeId.uuid)
+                add(DocumentsContract.Root.COLUMN_DOCUMENT_ID, buildDocumentId(volumeId.uuid, "/"))
                 add(DocumentsContract.Root.COLUMN_TITLE, "SillyCrypt")
-                add(DocumentsContract.Root.COLUMN_SUMMARY, volumeId)
+                add(DocumentsContract.Root.COLUMN_SUMMARY, volumeId.name)
                 add(
                     DocumentsContract.Root.COLUMN_FLAGS,
                     DocumentsContract.Root.FLAG_LOCAL_ONLY or

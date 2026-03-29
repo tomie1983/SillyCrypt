@@ -15,6 +15,17 @@ coroutines = "1.10.2"
 jetbrainsKotlinJvm = "2.0.21"
 robolectric = "4.16.1"
 coreKtxVersion = "1.7.0"
+materialIconsVersion = "1.7.8"
+daggerVersion = "2.59.2"
+androidxHiltCompiler = "1.3.0"
+composeNavigation = "2.9.7"
+fragmentKtx = "1.8.9"
+lifecycleVersion = "2.10.0"
+ksp = "2.3.4"
+datastore = "1.2.1"
+serializeVersion = "1.10.0"
+serialization = "2.3.20"
+immutable = "0.4.0"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -39,9 +50,23 @@ test-coroutines = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-
 coroutines-core = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-core", version.ref = "coroutines" }
 robolectric = { group = "org.robolectric", name = "robolectric", version.ref = "robolectric"}
 core-ktx = { group = "androidx.test", name = "core-ktx", version.ref = "coreKtxVersion" }
+compose-material-icons = { group = "androidx.compose.material", name = "material-icons-core", version.ref = "materialIconsVersion" }
+compose-icons-extended = { group = "androidx.compose.material", name = "material-icons-extended", version.ref = "materialIconsVersion" }
+compose-navigation = { group = "androidx.navigation", name = "navigation-compose", version.ref = "composeNavigation" }
+hilt-navigation = { group = "androidx.hilt", name = "hilt-navigation-compose", version.ref = "androidxHiltCompiler" }
+androidx-hilt-compiler = {group = "androidx.hilt", name = "hilt-compiler", version.ref = "androidxHiltCompiler" }
+hilt-android = { module = "com.google.dagger:hilt-android", version.ref = "daggerVersion" }
+hilt-compiler = { module = "com.google.dagger:hilt-compiler", version.ref = "daggerVersion" }
+fragment-ktx = { module = "androidx.fragment:fragment-ktx", version.ref = "fragmentKtx" }
+lifecycle-viewmodel-ktx = { module = "androidx.lifecycle:lifecycle-viewmodel-ktx", version.ref = "lifecycleVersion" }
+datastore = { group = "androidx.datastore", name = "datastore", version.ref = "datastore"  }
+kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "serializeVersion" }
+immutable-collections = { group = "org.jetbrains.kotlinx", name = "kotlinx-collections-immutable", version.ref = "immutable" }
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
 android-library = { id = "com.android.library", version.ref = "agp" }
 jetbrains-kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "jetbrainsKotlinJvm" }
-
+hiltAndroid = { id = "com.google.dagger.hilt.android", version.ref = "daggerVersion" }
+ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }
+serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "serialization"}

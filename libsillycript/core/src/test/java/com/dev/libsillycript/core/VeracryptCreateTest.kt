@@ -1,10 +1,10 @@
 package com.dev.libsillycript.core
 
+import com.dev.exfat.data.FileRandomAccessData
 import com.dev.libsillycript.core.blockCiphers.BlockCipherType
+import com.dev.libsillycript.core.factory.UsualFileFactory
 import com.dev.libsillycript.core.kdfs.KDFType
 import com.dev.libsillycript.core.keyStore.KeyStoreFactoryUnsafeImpl
-import com.dev.exfat.data.FileRandomAccessData
-import com.dev.libsillycript.core.VeraCryptMaster.Companion.HIDDEN_HEADER_DEFAULT_INDEX
 import com.dev.libsillycript.core.fs.FsType
 import com.dev.libsillycript.core.utils.use
 import junit.framework.TestCase
@@ -61,7 +61,7 @@ class VeracryptCreateTest {
         // 1) create ----------------------------------------------------------
 
         VeraCryptMaster(KeyStoreFactoryUnsafeImpl()).createRaw(
-            file = scratch,
+            factory = UsualFileFactory(scratch),
             data = listOf(
                 VeracryptData(
                     size = sizeBytes,
@@ -114,7 +114,7 @@ class VeracryptCreateTest {
 
         // 1) create ----------------------------------------------------------
         VeraCryptMaster(KeyStoreFactoryUnsafeImpl()).createRaw(
-            file = scratch,
+            factory = UsualFileFactory(scratch),
             data = listOf(
                 VeracryptData(
                     size = outerSize,
@@ -183,7 +183,7 @@ class VeracryptCreateTest {
         // create 2 MB outer-only container
 
         VeraCryptMaster(KeyStoreFactoryUnsafeImpl()).createRaw(
-            file = scratch,
+            factory = UsualFileFactory(scratch),
             data = listOf(
                 VeracryptData(sizeBytes,
                     VeracryptOpeningData(

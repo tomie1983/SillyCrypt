@@ -10,19 +10,21 @@ import java.util.concurrent.ConcurrentHashMap
 
 object EXFatVolumesManager {
     private val map = ConcurrentHashMap<String, ExFATFS>()
-    private val _activeVolumes: MutableStateFlow<List<String>> = MutableStateFlow(listOf())
+    private val _activeVolumes: MutableStateFlow<List<VeracryptVolumeData>> = MutableStateFlow(listOf())
     val activeVolumes = _activeVolumes.asStateFlow()
 
     private fun updateActiveVolumes() {
-        _activeVolumes.update { map.keys().toList() }
+        _activeVolumes.update {
+            map.entries.map { VeracryptVolumeData(it.value.name, it.key) }
+        }
     }
 
-    fun register(volumeFactory: RandomAccessDataFactory): String {
+    fun register(volumeFactory: RandomAccessDataFactory, name: String): String {
         var id = UUID.randomUUID().toString()
         while (map.contains(id)) {
             id = UUID.randomUUID().toString()
         }
-        map[id] = ExFATFS(volumeFactory)
+        map[id] = ExFATFS(volumeFactory, name)
         updateActiveVolumes()
         return id
     }

@@ -6,6 +6,7 @@ import java.io.RandomAccessFile
 
 
 class FileRandomAccessData(private val file: File, mode: String = "rw"): RandomAccessData {
+
     private val raf = RandomAccessFile(file, mode)
 
     override fun seek(pos: Long) = raf.seek(pos)

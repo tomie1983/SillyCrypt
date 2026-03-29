@@ -13,10 +13,12 @@ import com.dev.libsillycript.core.keyStore.KeyStoreFactory
 import com.dev.exfat.data.FileRandomAccessData
 import com.dev.exfat.data.MemoryRandomAccessData
 import com.dev.exfat.data.RandomAccessData
+import com.dev.exfat.data.RandomAccessDataFactory
 import com.dev.exfat.exfat.ExFATFS.Companion.MIN_EXFAT_SIZE
 import com.dev.exfat.exfat.bootregion.BootRegionCreator.Companion.computeFirstUserDataByte
 import com.dev.exfat.exfat.concat
 import com.dev.libsillycript.core.cache.SharedSectorCache
+import com.dev.libsillycript.core.factory.UsualFileFactory
 import com.dev.libsillycript.core.factory.VeracryptFileFactory
 import com.dev.libsillycript.core.factory.VeracryptMemoryFactory
 import com.dev.libsillycript.core.utils.beLong
@@ -39,10 +41,10 @@ import java.util.zip.CRC32
 
 open class VeraCryptMaster(
     private val keyStoreFactory: KeyStoreFactory,
-    private val safeDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    protected val safeDispatcher: CoroutineDispatcher = Dispatchers.IO,
     private val blockCipherFactory: BlockCipherFactory = BlockCipherFactoryImpl(),
     private val kdfFactory: KDFFactory = KDFFactoryImpl(),
-    private val fsFactory: FSFactory = FSFactoryImpl()
+    protected val fsFactory: FSFactory = FSFactoryImpl()
 ) {
 
     companion object {
@@ -55,7 +57,6 @@ open class VeraCryptMaster(
         private const val SIZE_DATA = 100
         private const val OFFSET_DATA = 108
         private const val LENGTH_DATA = 116
-        const val HIDDEN_HEADER_DEFAULT_INDEX = 128
         private const val FULL_HEADER_SIZE = HEADER_SIZE * HIDDEN_HEADER_DEFAULT_INDEX
         private const val MASTER_KEY_OFFSET = 256
         private const val SECOND_KEY_OFFSET = 288
@@ -76,10 +77,10 @@ open class VeraCryptMaster(
         file: File,
         data: List<VeracryptData>,
     ) {
-        val newData = alignSizesToSectors(data)
-        verifyVeracryptLayoutForFS(data)
-        createRaw(file, newData, true)
         withContext(safeDispatcher) {
+            val newData = alignSizesToSectors(data)
+            verifyVeracryptLayoutForFS(data)
+            createRaw(UsualFileFactory(file), newData, true)
             newData.forEach { veracryptData ->
                  createFileSystem(
                     file,
@@ -87,6 +88,7 @@ open class VeraCryptMaster(
                     veracryptData.index,
                     veracryptData.fsType
                 )
+                veracryptData.veracryptOpeningData.password.fill('?')
             }
         }
     }
@@ -99,15 +101,14 @@ open class VeraCryptMaster(
     ) {
         val encryptionData = openUnsafeRaw(
             FileRandomAccessData(file),
-            VeracryptMode.OpenNormal(data),
-            index,
+            VeracryptMode.OpenNormal(data, index),
         )
         val volumeFactory = VeracryptFileFactory(file, encryptionData)
         fsFactory.create(fsType, volumeFactory)
     }
 
     suspend fun createRaw(
-        file: File,
+        factory: RandomAccessDataFactory,
         data: List<VeracryptData>,
         skipChecks: Boolean = false
     ) {
@@ -122,12 +123,12 @@ open class VeraCryptMaster(
             }
             val firstVolume = newData.first()
             writeFullRandom(
-                FileRandomAccessData(file),
+                factory.create(),
                 firstVolume.size,
                 firstVolume.veracryptOpeningData.ciphers
             )
             createUnsafe(
-                FileRandomAccessData(file),
+                factory.create(),
                 firstVolume.size,
                 firstVolume.veracryptOpeningData.password,
                 firstVolume.veracryptOpeningData.ciphers,
@@ -135,9 +136,12 @@ open class VeraCryptMaster(
                 firstVolume.index,
                 firstVolume.veracryptOpeningData.pim
             )
+            if (!skipChecks) {
+                firstVolume.veracryptOpeningData.password.fill('?')
+            }
             newData.drop(1).forEach { veracryptData ->
                 createUnsafe(
-                    FileRandomAccessData(file),
+                    factory.create(),
                     veracryptData.size,
                     veracryptData.veracryptOpeningData.password,
                     veracryptData.veracryptOpeningData.ciphers,
@@ -146,11 +150,14 @@ open class VeraCryptMaster(
                     veracryptData.veracryptOpeningData.pim,
                     firstVolume.size
                 )
+                if (!skipChecks) {
+                    veracryptData.veracryptOpeningData.password.fill('?')
+                }
             }
         }
     }
 
-    private fun alignSizesToSectors(data: List<VeracryptData>) = data.map {
+    protected fun alignSizesToSectors(data: List<VeracryptData>) = data.map {
         val remains = it.size % BLOCK_SIZE
         it.copy(size = it.size + if (remains == 0L) { 0 }
         else {
@@ -163,11 +170,19 @@ open class VeraCryptMaster(
             "Veracrypt layout is empty"
         }
         val firstItem = data.first()
+        check(firstItem.index == 0) {
+            "First item is not standard Veracrypt volume"
+        }
         check(firstItem.size > 0) {
             "Veracrypt volume size is not positive"
         }
-        verifyVeracryptVolume(firstItem.index, firstItem.veracryptOpeningData)
+        verifyVeracryptVolume(0, firstItem.veracryptOpeningData)
         var previousSize = firstItem.size
+        if (data.size > 1) {
+            check(data[1].index == HIDDEN_HEADER_DEFAULT_INDEX) {
+                "Second item is not hidden Veracrypt volume"
+            }
+        }
         data.drop(1).forEach {
             check(it.size < previousSize) {
                 "Hidden volume is not smaller than outer volume"
@@ -186,7 +201,7 @@ open class VeraCryptMaster(
         }
     }
 
-    private fun verifyVeracryptLayoutForFS(data: List<VeracryptData>) {
+    protected fun verifyVeracryptLayoutForFS(data: List<VeracryptData>) {
         verifyVeracryptLayout(data)
         val lastItem = data.last()
         when(lastItem.fsType) {
@@ -196,8 +211,8 @@ open class VeraCryptMaster(
         }
         if (data.size > 1) {
             for (i in 1..data.lastIndex) {
-                val itemDiff = data[i].size - data[i - 1].size
-                val requiredSize = computeFirstUserDataByte(data[i].size)
+                val itemDiff = data[i - 1].size - data[i].size
+                val requiredSize = computeFirstUserDataByte(data[i - 1].size)
                 check(itemDiff > requiredSize) {
                     "Difference between volumes sizes is not enough"
                 }
@@ -287,8 +302,6 @@ open class VeraCryptMaster(
         val headerKey = kdfFactory.create(kdf).derive(
             password, salt, pim
         )                                   // 64 bytes
-        //clearing password
-        password.fill(Char(0))
         /* 2. Generate volume master keys (64 bytes) */
         val masterKey1 = ByteArray(XTS_KEY_LENGTH).also(rnd::nextBytes)
         val masterKey2 = ByteArray(XTS_KEY_LENGTH).also(rnd::nextBytes)
@@ -363,18 +376,15 @@ open class VeraCryptMaster(
         input: ByteArray,
         data: VeracryptMode,
         fsType: FsType,
-        outerVolumeIndex: Int = 0,
-        hiddenVolumeIndex: Int = HIDDEN_HEADER_DEFAULT_INDEX,
+        name: String
     ): String {
         return withContext(safeDispatcher) {
             val data  = openUnsafeRaw(
                 input = MemoryRandomAccessData(input),
                 data = data,
-                outerVolumeIndex = outerVolumeIndex,
-                hiddenVolumeIndex = hiddenVolumeIndex
             )
             val volumeFactory = VeracryptMemoryFactory(input, data)
-            return@withContext fsFactory.open(fsType, volumeFactory)
+            return@withContext fsFactory.open(fsType, volumeFactory, name)
         }
     }
 
@@ -382,18 +392,15 @@ open class VeraCryptMaster(
         input: File,
         data: VeracryptMode,
         fsType: FsType,
-        outerVolumeIndex: Int = 0,
-        hiddenVolumeIndex: Int = HIDDEN_HEADER_DEFAULT_INDEX,
+        name: String
     ): String {
         return withContext(safeDispatcher) {
             val data  = openUnsafeRaw(
                 input = FileRandomAccessData(input),
                 data = data,
-                outerVolumeIndex = outerVolumeIndex,
-                hiddenVolumeIndex = hiddenVolumeIndex
             )
             val volumeFactory = VeracryptFileFactory(input, data)
-            return@withContext fsFactory.open(fsType, volumeFactory)
+            return@withContext fsFactory.open(fsType, volumeFactory, name)
         }
     }
 
@@ -401,15 +408,12 @@ open class VeraCryptMaster(
         input: ByteArray,
         data: VeracryptMode,
         cache: SharedSectorCache = SharedSectorCache(),
-        outerVolumeIndex: Int = 0,
-        hiddenVolumeIndex: Int = HIDDEN_HEADER_DEFAULT_INDEX,
     ): BaseVeracryptVolume {
         return openRaw(
             input = MemoryRandomAccessData(input),
             data = data,
             cache = cache,
-            outerVolumeIndex = outerVolumeIndex,
-            hiddenVolumeIndex = hiddenVolumeIndex
+
         )
     }
 
@@ -417,48 +421,38 @@ open class VeraCryptMaster(
         input: File,
         data: VeracryptMode,
         cache: SharedSectorCache = SharedSectorCache(),
-        outerVolumeIndex: Int = 0,
-        hiddenVolumeIndex: Int = HIDDEN_HEADER_DEFAULT_INDEX,
     ): BaseVeracryptVolume {
         return openRaw(
             input = FileRandomAccessData(input),
             data = data,
             cache = cache,
-            outerVolumeIndex = outerVolumeIndex,
-            hiddenVolumeIndex = hiddenVolumeIndex,
         )
     }
 
     /** Open the volume and return the *entire* decrypted payload without headers */
     @Throws(IOException::class, GeneralSecurityException::class)
-    private suspend fun openRaw(
+    protected suspend fun openRaw(
         input: RandomAccessData,
         data: VeracryptMode,
         cache: SharedSectorCache,
-        outerVolumeIndex: Int,
-        hiddenVolumeIndex: Int,
     ): BaseVeracryptVolume {
         return withContext(safeDispatcher) {
             BaseVeracryptVolume(input, cache, openUnsafeRaw(
                 input = input,
                 data = data,
-                outerVolumeIndex = outerVolumeIndex,
-                hiddenVolumeIndex = hiddenVolumeIndex
             )
             )
         }
     }
 
-    private suspend fun openUnsafeRaw(
+    protected suspend fun openUnsafeRaw(
         input: RandomAccessData,
         data: VeracryptMode,
-        outerVolumeIndex: Int = 0,
-        hiddenVolumeIndex: Int = HIDDEN_HEADER_DEFAULT_INDEX,
     ): EncryptionData {
         if (data is VeracryptMode.OpenHidden) {
-            input.seek((hiddenVolumeIndex * HEADER_SIZE).toLong())
+            input.seek((data.index * HEADER_SIZE).toLong())
         } else {
-            input.seek((outerVolumeIndex * HEADER_SIZE).toLong())
+            input.seek((data.index * HEADER_SIZE).toLong())
         }
         val (key, size, offset) = decryptHeaderData(
             input,
@@ -471,7 +465,7 @@ open class VeraCryptMaster(
         val resultSize = when (data) {
             is VeracryptMode.OpenHidden, is VeracryptMode.OpenNormal -> size
             is VeracryptMode.OpenProtected -> {
-                input.seek((hiddenVolumeIndex * HEADER_SIZE).toLong())
+                input.seek((data.hiddenIndex * HEADER_SIZE).toLong())
                 val (hiddenKey, hiddenSize, _) = decryptHeaderData(
                     input,
                     data.hiddenData.password,
@@ -523,7 +517,7 @@ open class VeraCryptMaster(
                         'R'.code.toByte(), 'A'.code.toByte()
                     )
                 )
-        ) throw SecurityException("Неверный пароль или файл не VeraCrypt")
+        ) throw SecurityException("Wrong password or file is not VeraCrypt volume")
 
         /* 4. Read volume parameters */
         val dataOffset = beLong(decryptedHeader, OFFSET_DATA)

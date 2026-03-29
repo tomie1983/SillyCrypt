@@ -3,13 +3,14 @@ package com.dev.libsillycript.android
 import android.content.Context
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import com.dev.exfat.data.FileRandomAccessData
 import com.dev.libsillycript.core.blockCiphers.BlockCipherType
 import com.dev.libsillycript.core.kdfs.KDFType
-import com.dev.exfat.data.FileRandomAccessData
-import com.dev.libsillycript.core.VeraCryptMaster.Companion.HIDDEN_HEADER_DEFAULT_INDEX
+import com.dev.libsillycript.core.HIDDEN_HEADER_DEFAULT_INDEX
 import com.dev.libsillycript.core.VeracryptData
 import com.dev.libsillycript.core.VeracryptMode
 import com.dev.libsillycript.core.VeracryptOpeningData
+import com.dev.libsillycript.core.factory.UsualFileFactory
 import com.dev.libsillycript.core.fs.FsType
 import com.dev.libsillycript.core.utils.use
 import junit.framework.TestCase
@@ -68,7 +69,7 @@ class VeracryptCreateTest {
         // 1) create ----------------------------------------------------------
 
         AndroidVeracryptMaster(MutableStateFlow(100)).createRaw(
-            file = scratch,
+            factory = UsualFileFactory(scratch),
             data = listOf(
                 VeracryptData(
                     sizeBytes,
@@ -122,7 +123,7 @@ class VeracryptCreateTest {
         // 1) create ----------------------------------------------------------
 
         AndroidVeracryptMaster(MutableStateFlow(100)).createRaw(
-            file = scratch,
+            factory = UsualFileFactory(scratch),
             data = listOf(
                 VeracryptData(
                     outerSize,
@@ -191,7 +192,7 @@ class VeracryptCreateTest {
         // create 2 MB outer-only container
 
         AndroidVeracryptMaster(MutableStateFlow(100)).createRaw(
-            file = scratch,
+            factory = UsualFileFactory(scratch),
             data = listOf(
                 VeracryptData(
                     size = sizeBytes,

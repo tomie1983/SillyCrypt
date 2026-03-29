@@ -17,10 +17,13 @@ class FSFactoryImpl: FSFactory {
         }
     }
 
-    override fun open(fsType: FsType, volumeFactory: RandomAccessDataFactory): String {
+    override fun open(
+        fsType: FsType,
+        volumeFactory: RandomAccessDataFactory,
+        name: String): String {
         return when(fsType) {
             FsType.ExFAT -> {
-                EXFatVolumesManager.register(volumeFactory)
+                EXFatVolumesManager.register(volumeFactory, name)
             }
         }
     }

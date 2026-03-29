@@ -89,7 +89,7 @@ class FileSystemReadTest {
             VeracryptMode.OpenNormal(VeracryptOpeningData("abc".toCharArray(),
             KDFType.PBKDF2,
             listOf(BlockCipherType.AES))),
-            FsType.ExFAT)
+            FsType.ExFAT, "test")
             EXFatVolumesManager.get(fs).getFileFromPath("/").use { file ->
             println(file == null)
             println(file?.isDirectory)
@@ -108,6 +108,7 @@ class FileSystemReadTest {
             KDFType.PBKDF2,
             listOf(BlockCipherType.AES))),
             FsType.ExFAT,
+            "test"
         )
 
         val actualDirectories = linkedSetOf<String>()

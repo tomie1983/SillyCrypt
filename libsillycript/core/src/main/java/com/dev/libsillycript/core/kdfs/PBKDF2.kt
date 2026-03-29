@@ -12,8 +12,6 @@ class PBKDF2: KDF {
             INIT_ITERATIONS_SHA512 + pim * 1000
         }
         val sk = kf.generateSecret(PBEKeySpec(password, salt, iterations, PBKDF2_KEY_SIZE))
-        //clear password
-        password.fill(Char(0))
         return sk.encoded
     }
 
