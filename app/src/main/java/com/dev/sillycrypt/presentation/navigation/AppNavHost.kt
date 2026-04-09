@@ -81,7 +81,7 @@ fun AppNavHost(
             }
 
             composable(AppDestination.CreateFile.route) {
-                CreateVolumeScreen(innerPadding = innerPadding)
+                CreateVolumeScreen(innerPadding = innerPadding, closeActivity = closeActivity)
             }
         }
     }

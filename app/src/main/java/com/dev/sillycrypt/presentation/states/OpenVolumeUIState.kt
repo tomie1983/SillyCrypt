@@ -10,9 +10,7 @@ import com.dev.libsillycript.core.kdfs.KDFType
 import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.persistentListOf
 
-sealed class OpenVolumeUIState(
-
-) {
+sealed class OpenVolumeUIState{
     data class Initial(
         val data: ImmutableList<VeracryptVolumeData> = persistentListOf<VeracryptVolumeData>(),
     ): OpenVolumeUIState()
@@ -33,7 +31,7 @@ sealed class OpenVolumeUIState(
         val hiddenCipher: BlockCipherType = BlockCipherType.AES,
         val hiddenPim: String = "0",
         val hiddenIndex: String = HIDDEN_HEADER_DEFAULT_INDEX.toString(),
-        val confirmDialog: OpenVolumeConfirmDialog? = null,
+        val confirmDialog: ConfirmDialog? = null,
         val loading: Boolean = false
     ): OpenVolumeUIState() {
         fun toVeracryptMode(): VeracryptMode {

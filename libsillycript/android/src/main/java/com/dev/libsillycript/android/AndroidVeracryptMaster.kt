@@ -1,5 +1,7 @@
 package com.dev.libsillycript.android
 
+import android.content.Context
+import android.net.Uri
 import android.os.ParcelFileDescriptor
 import com.dev.exfat.data.FileRandomAccessData
 import com.dev.exfat.data.MemoryRandomAccessData
@@ -23,22 +25,23 @@ import java.io.File
 import java.io.FileDescriptor
 
 class AndroidVeracryptMaster(
+    private val context: Context,
     timeoutFlow: Flow<Long>
 ): VeraCryptMaster(
     keyStoreFactory = AndroidKeyStoreFactory(timeoutFlow),
     blockCipherFactory = BlockCipherNativeFactory(),
 ) {
     suspend fun create(
-        descriptor: ParcelFileDescriptor,
+        uri: Uri,
         data: List<VeracryptData>,
     ) {
         withContext(safeDispatcher) {
             val newData = alignSizesToSectors(data)
             verifyVeracryptLayoutForFS(data)
-            createRaw(UsualDescriptorFactory(descriptor), newData, true)
+            createRaw(UsualDescriptorFactory(uri, context), newData, true)
             newData.forEach { veracryptData ->
                 createFileSystem(
-                    descriptor,
+                    uri,
                     veracryptData.veracryptOpeningData,
                     veracryptData.index,
                     veracryptData.fsType
@@ -49,42 +52,42 @@ class AndroidVeracryptMaster(
     }
 
     suspend fun createFileSystem(
-        descriptor: ParcelFileDescriptor,
+        uri: Uri,
         data: VeracryptOpeningData,
         index: Int,
         fsType: FsType
     ) {
         val encryptionData = openUnsafeRaw(
-            RandomAccessFileDescriptor(descriptor),
+            RandomAccessFileDescriptor(context, uri),
             VeracryptMode.OpenNormal(data, index),
         )
-        val volumeFactory = VeracryptDescriptorFactory(descriptor, encryptionData)
+        val volumeFactory = VeracryptDescriptorFactory(uri, context, encryptionData)
         fsFactory.create(fsType, volumeFactory)
     }
 
     suspend fun open(
-        input: ParcelFileDescriptor,
+        uri: Uri,
         data: VeracryptMode,
         fsType: FsType,
         name: String
     ): String {
         return withContext(safeDispatcher) {
             val data  = openUnsafeRaw(
-                input = RandomAccessFileDescriptor(input),
+                input = RandomAccessFileDescriptor(context, uri),
                 data = data,
             )
-            val volumeFactory = VeracryptDescriptorFactory(input, data)
+            val volumeFactory = VeracryptDescriptorFactory(uri, context, data)
             return@withContext fsFactory.open(fsType, volumeFactory, name)
         }
     }
 
     suspend fun openRaw(
-        input: ParcelFileDescriptor,
+        uri: Uri,
         data: VeracryptMode,
         cache: SharedSectorCache = SharedSectorCache(),
     ): BaseVeracryptVolume {
         return openRaw(
-            input = RandomAccessFileDescriptor(input),
+            input = RandomAccessFileDescriptor(context, uri),
             data = data,
             cache = cache,
         )

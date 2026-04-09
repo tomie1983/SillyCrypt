@@ -4,9 +4,11 @@ import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.core.DataStoreFactory
 import com.dev.sillycrypt.data.repository.AppSettingsRepositoryImpl
+import com.dev.sillycrypt.data.repository.CreateVolumeRepositoryImpl
 import com.dev.sillycrypt.data.repository.ManageVolumeRepositoryImpl
 import com.dev.sillycrypt.data.serializers.AppSettingsSerializer
 import com.dev.sillycrypt.domain.entities.AppSettings
+import com.dev.sillycrypt.domain.repository.CreateVolumeRepository
 import com.dev.sillycrypt.domain.repository.ManageVolumeRepository
 import com.dev.sillycrypt.domain.repository.SettingsRepository
 import dagger.Binds
@@ -33,6 +35,12 @@ abstract class RepositoryModule {
     abstract fun bindSettingsRepository(
         impl: AppSettingsRepositoryImpl
     ): SettingsRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindCreateVolumeRepository(
+        impl: CreateVolumeRepositoryImpl
+    ): CreateVolumeRepository
 
     companion object {
 

@@ -1,5 +1,7 @@
 package com.dev.libsillycript.android.data
 
+import android.content.Context
+import android.net.Uri
 import android.os.ParcelFileDescriptor
 import android.system.ErrnoException
 import android.system.Os
@@ -9,9 +11,14 @@ import com.dev.exfat.data.RandomAccessData
 import java.io.EOFException
 import java.io.IOException
 
-class RandomAccessFileDescriptor(private val pfd: ParcelFileDescriptor): RandomAccessData {
+class RandomAccessFileDescriptor(
+    context: Context,
+    uri: Uri
+): RandomAccessData {
 
-    private val fd = pfd.fileDescriptor
+    private val pfd = context.contentResolver.openFileDescriptor(uri, "rw")
+
+    private val fd = pfd?.fileDescriptor
 
     @Volatile
     private var closed = false
@@ -19,11 +26,7 @@ class RandomAccessFileDescriptor(private val pfd: ParcelFileDescriptor): RandomA
     override fun seek(pos: Long) {
         checkNotClosed()
         require(pos >= 0) { "Position must be >= 0, was $pos" }
-        try {
-            Os.lseek(fd, pos, OsConstants.SEEK_SET)
-        } catch (e: ErrnoException) {
-            throw IOException("seek($pos) failed", e)
-        }
+        Os.lseek(fd, pos, OsConstants.SEEK_SET)
     }
 
     override suspend fun read(buf: ByteArray): Int {
@@ -83,7 +86,7 @@ class RandomAccessFileDescriptor(private val pfd: ParcelFileDescriptor): RandomA
     override suspend fun close() {
         if (!closed) {
             closed = true
-            pfd.close()
+            pfd?.close()
         }
     }
 

@@ -1,6 +1,6 @@
 package com.dev.sillycrypt.presentation.states
 
-class OpenVolumeErrorState(
+class ErrorState(
     val title: String,
     val message: String
 )

@@ -1,5 +1,7 @@
 package com.dev.libsillycript.android.factory
 
+import android.content.Context
+import android.net.Uri
 import android.os.ParcelFileDescriptor
 import com.dev.exfat.data.FileRandomAccessData
 import com.dev.exfat.data.RandomAccessData
@@ -10,12 +12,13 @@ import com.dev.libsillycript.core.volumes.BaseVeracryptVolume
 import com.dev.libsillycript.core.volumes.EncryptionData
 
 class VeracryptDescriptorFactory(
-    private val pfd: ParcelFileDescriptor,
+    private val uri: Uri,
+    private val context: Context,
     private val encryptionData: EncryptionData,
     private val cache: SharedSectorCache = SharedSectorCache()
 ): RandomAccessDataFactory {
     override fun create(): RandomAccessData {
-        return BaseVeracryptVolume(RandomAccessFileDescriptor(pfd), cache, encryptionData)
+        return BaseVeracryptVolume(RandomAccessFileDescriptor(context, uri), cache, encryptionData)
     }
 
     override suspend fun close() {

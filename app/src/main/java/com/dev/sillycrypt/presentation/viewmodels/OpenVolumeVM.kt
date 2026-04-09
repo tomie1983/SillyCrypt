@@ -9,8 +9,8 @@ import com.dev.libsillycript.core.fs.FsType
 import com.dev.libsillycript.core.kdfs.KDFType
 import com.dev.sillycrypt.domain.entities.VolumeOpeningState
 import com.dev.sillycrypt.domain.repository.ManageVolumeRepository
-import com.dev.sillycrypt.presentation.states.OpenVolumeConfirmDialog
-import com.dev.sillycrypt.presentation.states.OpenVolumeErrorState
+import com.dev.sillycrypt.presentation.states.ConfirmDialog
+import com.dev.sillycrypt.presentation.states.ErrorState
 import com.dev.sillycrypt.presentation.states.OpenVolumeUIState
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
@@ -31,7 +31,7 @@ class OpenVolumeVM @Inject constructor(
 
     private val openVolumeUIStateFlow = MutableStateFlow<OpenVolumeUIState>(OpenVolumeUIState.Initial())
 
-    private val _errorState = MutableStateFlow<OpenVolumeErrorState?>(null)
+    private val _errorState = MutableStateFlow<ErrorState?>(null)
 
     val errorState = _errorState.asStateFlow()
 
@@ -71,7 +71,7 @@ class OpenVolumeVM @Inject constructor(
                         OpenVolumeUIState.OpenVolumeFormState(name = repoState.name)
                 }
             }.onFailure { error ->
-                _errorState.value = OpenVolumeErrorState(
+                _errorState.value = ErrorState(
                     title = "Ошибка выбора файла",
                     message = error.stackTraceToString()
                 )
@@ -85,7 +85,7 @@ class OpenVolumeVM @Inject constructor(
             runCatching {
                 repository.closeVolume(id)
             }.onFailure { error ->
-                _errorState.value = OpenVolumeErrorState(
+                _errorState.value = ErrorState(
                     title = "Ошибка закрытия тома",
                     message = error.stackTraceToString()
                 )
@@ -126,12 +126,12 @@ class OpenVolumeVM @Inject constructor(
                 if (currentState.loading) {
                     openVolumeUIStateFlow.update {
                         check(it is OpenVolumeUIState.OpenVolumeFormState)
-                        it.copy(confirmDialog = OpenVolumeConfirmDialog.CancelLoading)
+                        it.copy(confirmDialog = ConfirmDialog.CancelLoading)
                     }
                 } else {
                     openVolumeUIStateFlow.update {
                         check(it is OpenVolumeUIState.OpenVolumeFormState)
-                        it.copy(confirmDialog = OpenVolumeConfirmDialog.ExitForm)
+                        it.copy(confirmDialog = ConfirmDialog.ExitForm)
                     }
                 }
                 true
@@ -156,7 +156,7 @@ class OpenVolumeVM @Inject constructor(
 
         val mode = runCatching { current.toVeracryptMode() }
             .getOrElse { error ->
-                _errorState.value = OpenVolumeErrorState(
+                _errorState.value = ErrorState(
                     title = "Некорректные параметры",
                     message = error.message ?: error.stackTraceToString()
                 )
@@ -177,7 +177,7 @@ class OpenVolumeVM @Inject constructor(
                     check(it is OpenVolumeUIState.OpenVolumeFormState)
                     it.copy(loading = false, confirmDialog = null)
                 }
-                _errorState.value = OpenVolumeErrorState(
+                _errorState.value = ErrorState(
                     title = "Ошибка открытия тома",
                     message = error.stackTraceToString()
                 )

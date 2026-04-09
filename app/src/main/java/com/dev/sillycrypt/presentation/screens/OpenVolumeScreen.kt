@@ -16,8 +16,8 @@ import com.dev.sillycrypt.presentation.elements.ConfirmDialog
 import com.dev.sillycrypt.presentation.elements.ErrorDialog
 import com.dev.sillycrypt.presentation.elements.OpenVolumeFormContent
 import com.dev.sillycrypt.presentation.elements.OpenVolumeInitialContent
-import com.dev.sillycrypt.presentation.elements.OpenVolumeLoadingContent
-import com.dev.sillycrypt.presentation.states.OpenVolumeConfirmDialog
+import com.dev.sillycrypt.presentation.elements.LoadingContent
+import com.dev.sillycrypt.presentation.states.ConfirmDialog
 import com.dev.sillycrypt.presentation.states.OpenVolumeUIState
 import com.dev.sillycrypt.presentation.viewmodels.OpenVolumeVM
 
@@ -65,7 +65,7 @@ fun OpenVolumeScreen(
 
             is OpenVolumeUIState.OpenVolumeFormState -> {
                 if (uiState.loading) {
-                    OpenVolumeLoadingContent()
+                    LoadingContent()
                 } else {
                     OpenVolumeFormContent(
                         state = uiState,
@@ -87,7 +87,7 @@ fun OpenVolumeScreen(
                 }
 
                 when (uiState.confirmDialog) {
-                    OpenVolumeConfirmDialog.ExitForm -> {
+                    ConfirmDialog.ExitForm -> {
                         ConfirmDialog(
                             title = "Выйти из формы?",
                             message = "Выбранный файл будет сброшен.",
@@ -98,7 +98,7 @@ fun OpenVolumeScreen(
                         )
                     }
 
-                    OpenVolumeConfirmDialog.CancelLoading -> {
+                    ConfirmDialog.CancelLoading -> {
                         ConfirmDialog(
                             title = "Прервать открытие тома?",
                             message = "Открытие будет остановлено.",
