@@ -36,7 +36,11 @@ class ExFATFileHandler internal constructor(
     }
 
     override suspend fun write(buf: ByteArray) {
-        throw UnsupportedOperationException("Read-only implementation for now")
+        val core = state.snapshotCore()
+        require(!core.isDirectory) { "Cannot write raw bytes to a directory: $displayPath" }
+        if (buf.isEmpty()) return
+        val written = fileSystem.writeSeekableRange(state, cursor, buf, 0, buf.size, data)
+        cursor += written
     }
 
     override suspend fun readFully(): ByteArray {
@@ -64,7 +68,7 @@ class ExFATFileHandler internal constructor(
     }
 
     override val size: Long
-        get() = state.snapshotCore().readableLength
+        get() = state.snapshotCore().dataLength
 
     override val position: Long
         get() = cursor

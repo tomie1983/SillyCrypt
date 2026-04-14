@@ -10,6 +10,16 @@ sealed class AppDestination(
         label = "Pick"
     )
 
+    data object ManageFiles : AppDestination(
+        route = "manage_files",
+        label = "Manage files"
+    )
+
+    data object PickFileNav : AppDestination(
+        route = "pick_file_nav",
+        label = "Pick"
+    )
+
     data object CreateFile : AppDestination(
         route = "create_file",
         label = "Create"

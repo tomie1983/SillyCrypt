@@ -37,7 +37,7 @@ class AndroidVeracryptMaster(
     ) {
         withContext(safeDispatcher) {
             val newData = alignSizesToSectors(data)
-            verifyVeracryptLayoutForFS(data)
+            verifyVeracryptLayoutForFS(newData)
             createRaw(UsualDescriptorFactory(uri, context), newData, true)
             newData.forEach { veracryptData ->
                 createFileSystem(

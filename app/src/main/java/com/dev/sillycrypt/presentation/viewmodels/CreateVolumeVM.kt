@@ -119,7 +119,7 @@ class CreateVolumeVM @Inject constructor(
         createVolumeUIStateFLow.update { state ->
             if (state is CreateVolumeUIState.CreateVolumeFormState) {
                 val forms = state.forms.toMutableList()
-                val isIndexFixed = forms.size > 1
+                val isIndexFixed = forms.size == 1
                 val index = if (forms.size == 1) {
                     HIDDEN_HEADER_DEFAULT_INDEX.toString()
                 } else {

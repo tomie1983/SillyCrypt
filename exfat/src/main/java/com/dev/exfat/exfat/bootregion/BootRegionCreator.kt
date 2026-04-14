@@ -356,7 +356,7 @@ class BootRegionCreator(private val data: RandomAccessData) {
             require(sectorsPerCluster > 0) { "sectorsPerCluster must be > 0" }
 
             require(volumeLengthBytes % bytesPerSector.toLong() == 0L) {
-                "volumeLengthBytes must be multiple of bytesPerSector"
+                "volumeLengthBytes must be multiple of bytesPerSector but it is $volumeLengthBytes"
             }
 
             val volumeLengthSectors = volumeLengthBytes / bytesPerSector.toLong()

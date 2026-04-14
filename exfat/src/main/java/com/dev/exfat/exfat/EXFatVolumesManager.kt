@@ -1,6 +1,5 @@
 package com.dev.exfat.exfat
 
-import com.dev.exfat.data.RandomAccessData
 import com.dev.exfat.data.RandomAccessDataFactory
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow

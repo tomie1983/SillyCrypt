@@ -43,6 +43,19 @@ class ExFATFile internal constructor(
 
     suspend fun listFiles(): List<ExFATFile> = handler.listFiles()
 
+
+    suspend fun createFile(name: String): ExFATFile {
+        require(isDirectory) { "Not a directory: $displayPath" }
+        return fileSystem.createChild(state, displayPath, name, isDirectory = false)
+    }
+
+    suspend fun createDirectory(name: String): ExFATFile {
+        require(isDirectory) { "Not a directory: $displayPath" }
+        return fileSystem.createChild(state, displayPath, name, isDirectory = true)
+    }
+
+    suspend fun mkdir(name: String): ExFATFile = createDirectory(name)
+
     /**
      * Opens a seekable handle for this file.
      *

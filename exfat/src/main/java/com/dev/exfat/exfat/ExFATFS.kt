@@ -138,6 +138,12 @@ class ExFATFS(
 
     suspend fun exists(path: String): Boolean = getFileFromPath(path) != null
 
+    suspend fun createFile(path: String): ExFATFile = createNodeByPath(path, isDirectory = false)
+
+    suspend fun createDirectory(path: String): ExFATFile = createNodeByPath(path, isDirectory = true)
+
+    suspend fun mkdir(path: String): ExFATFile = createDirectory(path)
+
     suspend fun close() {
         nodeStateRegistry.clear()
         fatChainCacheMutex.withLock { fatChainCache.clear() }
@@ -202,6 +208,337 @@ class ExFATFS(
 
     internal suspend fun <T> withAllocationLock(action: suspend () -> T): T {
         return allocationMutex.withLock { action() }
+    }
+
+
+    internal suspend fun createChild(
+        parentState: NodeState,
+        parentDisplayPath: String,
+        name: String,
+        isDirectory: Boolean
+    ): ExFATFile {
+        validateNewChildName(name)
+        val parentCore = parentState.snapshotCore()
+        require(parentCore.isDirectory) { "Not a directory: $parentDisplayPath" }
+
+        return parentState.writeMutex.withLock {
+            val data = createDataHandle()
+            var allocatedDirectoryCore: NodeCoreMetadata? = null
+            try {
+                val existing = listDirectoryEntries(parentState, data).firstOrNull { it.name == name }
+                require(existing == null) { "Entry already exists: ${joinPath(parentDisplayPath, name)}" }
+
+                val entrySet = buildEntrySetBytes(name, isDirectory, allocatedDirectoryCore)
+                val placement = findOrCreateDirectoryEntryPlacement(parentState, data, entrySet.size)
+
+                if (isDirectory) {
+                    allocatedDirectoryCore = allocateStandaloneDirectoryCore()
+                    zeroNewDirectoryContent(data, allocatedDirectoryCore)
+                }
+
+                val finalEntrySet = buildEntrySetBytes(name, isDirectory, allocatedDirectoryCore)
+                writeDirectoryStreamRange(
+                    data,
+                    parentState.snapshotCore().firstCluster,
+                    parentState.snapshotCore().noFatChain,
+                    placement.offset,
+                    finalEntrySet
+                )
+
+                if (placement.appendAtEnd) {
+                    val after = placement.offset + finalEntrySet.size
+                    val parentSize = parentState.snapshotCore().dataLength
+                    if (after + DIR_ENTRY_SIZE <= parentSize) {
+                        writeDirectoryStreamRange(
+                            data,
+                            parentState.snapshotCore().firstCluster,
+                            parentState.snapshotCore().noFatChain,
+                            after,
+                            ByteArray(DIR_ENTRY_SIZE)
+                        )
+                    }
+                }
+
+                val childCore = if (isDirectory) {
+                    allocatedDirectoryCore!!
+                } else {
+                    NodeCoreMetadata(
+                        isDirectory = false,
+                        attributes = 0,
+                        firstCluster = 0,
+                        dataLength = 0,
+                        validDataLength = 0,
+                        readableLength = 0,
+                        streamFlags = 0,
+                        noFatChain = false
+                    )
+                }
+
+                val nameEntryCount = fileNameEntryCount(name)
+                val entrySetLocation = NodeEntrySetLocation(
+                    parentDirFirstCluster = parentState.snapshotCore().firstCluster,
+                    parentDirNoFatChain = parentState.snapshotCore().noFatChain,
+                    primaryEntryOffsetInParentBytes = placement.offset,
+                    streamEntryOffsetInParentBytes = placement.offset + DIR_ENTRY_SIZE,
+                    fileNameEntryOffsetsInParentBytes = LongArray(nameEntryCount) { idx ->
+                        placement.offset + DIR_ENTRY_SIZE.toLong() * (2L + idx)
+                    }
+                )
+                val nodeId = NodeId.DirectoryEntry(
+                    parentDirFirstCluster = parentState.snapshotCore().firstCluster,
+                    primaryEntryOffsetInParentBytes = placement.offset
+                )
+                val state = internNodeState(nodeId, childCore, entrySetLocation)
+                ExFATFile(this, state, name, joinPath(parentDisplayPath, name))
+            } catch (t: Throwable) {
+                allocatedDirectoryCore?.let {
+                    runCatching { freeStandaloneNode(it) }
+                }
+                throw t
+            } finally {
+                data.close()
+            }
+        }
+    }
+
+    private suspend fun createNodeByPath(path: String, isDirectory: Boolean): ExFATFile {
+        val normalized = normalizeAbsolutePath(path)
+        require(normalized != "/") { "Cannot create root directory" }
+        require(!exists(normalized)) { "Entry already exists: $normalized" }
+
+        val parentPath = normalized.substringBeforeLast('/', "/").ifEmpty { "/" }
+        val childName = normalized.substringAfterLast('/')
+        val parent = getFileFromPath(parentPath)
+            ?: throw IllegalArgumentException("Parent directory does not exist: $parentPath")
+        require(parent.isDirectory) { "Parent path is not a directory: $parentPath" }
+        return createChild(parent.state, parent.path, childName, isDirectory)
+    }
+
+    private data class DirectoryEntryPlacement(
+        val offset: Long,
+        val appendAtEnd: Boolean
+    )
+
+    private suspend fun findOrCreateDirectoryEntryPlacement(
+        dirState: NodeState,
+        data: RandomAccessData,
+        entrySetSizeBytes: Int
+    ): DirectoryEntryPlacement {
+        val requiredEntries = entrySetSizeBytes / DIR_ENTRY_SIZE
+        while (true) {
+            val core = dirState.snapshotCore()
+            val bytes = readAllReadableBytes(core, data)
+            findDirectoryEntryPlacement(bytes, requiredEntries)?.let { return it }
+
+            val fsMeta = readConstantFileSystemMetadata()
+            val currentClusters = clustersForSize(core.dataLength, fsMeta.bytesPerCluster)
+            val targetClusters = (currentClusters + 1).coerceAtLeast(1)
+            val targetSize = targetClusters.toLong() * fsMeta.bytesPerCluster
+            ensureDirectoryCapacityLocked(dirState, targetSize)
+        }
+    }
+
+    private fun findDirectoryEntryPlacement(
+        dirBytes: ByteArray,
+        requiredEntries: Int
+    ): DirectoryEntryPlacement? {
+        var runStart = -1
+        var runCount = 0
+        var runStartedAtEndMarker = false
+
+        var i = 0
+        while (i + DIR_ENTRY_SIZE <= dirBytes.size) {
+            val raw = u8(dirBytes[i])
+            val free = raw == 0x00 || (raw and 0x80) == 0
+            if (free) {
+                if (runCount == 0) {
+                    runStart = i
+                    runStartedAtEndMarker = raw == 0x00
+                }
+                runCount++
+                if (runCount >= requiredEntries) {
+                    return DirectoryEntryPlacement(runStart.toLong(), runStartedAtEndMarker)
+                }
+            } else {
+                runStart = -1
+                runCount = 0
+                runStartedAtEndMarker = false
+            }
+            i += DIR_ENTRY_SIZE
+        }
+        return null
+    }
+
+    private suspend fun ensureDirectoryCapacityLocked(
+        dirState: NodeState,
+        targetSize: Long
+    ) {
+        val current = dirState.snapshotCore()
+        if (targetSize <= current.dataLength) return
+
+        val fsMeta = readConstantFileSystemMetadata()
+        val oldClusters = clustersForSize(current.dataLength, fsMeta.bytesPerCluster)
+        val requiredClusters = clustersForSize(targetSize, fsMeta.bytesPerCluster)
+        if (requiredClusters <= oldClusters) {
+            val finalCore = current.copy(
+                dataLength = targetSize,
+                validDataLength = targetSize,
+                readableLength = targetSize
+            )
+            updateFileMetadata(dirState, finalCore)
+            return
+        }
+
+        val tempData = createDataHandle()
+        try {
+            val plannedCore = allocateExpansion(dirState, current, requiredClusters, oldClusters)
+            val finalSize = requiredClusters.toLong() * fsMeta.bytesPerCluster
+            zeroFillRange(tempData, plannedCore, current.dataLength, finalSize)
+            val finalCore = plannedCore.copy(
+                dataLength = finalSize,
+                validDataLength = finalSize,
+                readableLength = finalSize
+            )
+            updateFileMetadata(dirState, finalCore)
+        } finally {
+            tempData.close()
+        }
+    }
+
+    private suspend fun allocateStandaloneDirectoryCore(): NodeCoreMetadata {
+        val fsMeta = readConstantFileSystemMetadata()
+        val bitmapInfo = readAllocationBitmapInfo()
+        val fatStartBytes = buildFatStartBytes(fsMeta)
+        return withAllocationLock {
+            serviceDataMutex.withLock {
+                bootRegionOperator.setDirty(true)
+                val planned = allocateForEmptyFile(
+                    current = NodeCoreMetadata(
+                        isDirectory = true,
+                        attributes = ATTR_DIRECTORY,
+                        firstCluster = 0,
+                        dataLength = 0,
+                        validDataLength = 0,
+                        readableLength = 0,
+                        streamFlags = 0,
+                        noFatChain = false
+                    ),
+                    requiredClusters = 1,
+                    fsMeta = fsMeta,
+                    bitmapInfo = bitmapInfo,
+                    fatStartBytes = fatStartBytes
+                ).copy(
+                    dataLength = fsMeta.bytesPerCluster,
+                    validDataLength = fsMeta.bytesPerCluster,
+                    readableLength = fsMeta.bytesPerCluster,
+                    attributes = ATTR_DIRECTORY
+                )
+                updatePercentInUse(serviceData, bitmapInfo, fsMeta)
+                bootRegionOperator.setDirty(false)
+                planned
+            }
+        }
+    }
+
+    private suspend fun zeroNewDirectoryContent(data: RandomAccessData, core: NodeCoreMetadata) {
+        val fsMeta = readConstantFileSystemMetadata()
+        val zeroLen = clustersForSize(core.dataLength, fsMeta.bytesPerCluster).toLong() * fsMeta.bytesPerCluster
+        zeroFillRange(data, core, 0L, zeroLen)
+    }
+
+    private suspend fun freeStandaloneNode(core: NodeCoreMetadata) {
+        if (core.firstCluster < CLUSTERS_OFFSET || core.dataLength <= 0L) return
+        val fsMeta = readConstantFileSystemMetadata()
+        val bitmapInfo = readAllocationBitmapInfo()
+        val fatStartBytes = buildFatStartBytes(fsMeta)
+        val clusters = clustersForSize(core.dataLength, fsMeta.bytesPerCluster)
+        withAllocationLock {
+            serviceDataMutex.withLock {
+                bootRegionOperator.setDirty(true)
+                if (core.noFatChain) {
+                    bitmapOperator.markFreeRange(bitmapInfo.startByte, core.firstCluster.toInt(), clusters, fsMeta.clusterCount)
+                } else {
+                    val chain = fatOperator.walkChain(serviceData, core.firstCluster.toInt(), fatStartBytes[0], maxOf(clusters, 1))
+                    bitmapOperator.markFreeClusters(bitmapInfo.startByte, chain, fsMeta.clusterCount)
+                    fatOperator.freeChain(core.firstCluster.toInt(), fatStartBytes, DEFAULT_WALK_LIMIT)
+                    fatChainCacheMutex.withLock { fatChainCache.remove(core.firstCluster.toInt()) }
+                }
+                updatePercentInUse(serviceData, bitmapInfo, fsMeta)
+                bootRegionOperator.setDirty(false)
+            }
+        }
+    }
+
+    private fun buildEntrySetBytes(
+        name: String,
+        isDirectory: Boolean,
+        allocatedDirectoryCore: NodeCoreMetadata?
+    ): ByteArray {
+        val nameEntries = buildFileNameEntries(name)
+        val secondaryCount = 1 + nameEntries.size
+        val primary = ByteArray(DIR_ENTRY_SIZE)
+        primary[0] = (0x80 or TYPE_FILE_DIR_ENTRY).toByte()
+        primary[1] = secondaryCount.toByte()
+        putU16le(primary, 4, if (isDirectory) ATTR_DIRECTORY else 0)
+
+        val stream = ByteArray(DIR_ENTRY_SIZE)
+        stream[0] = (0x80 or TYPE_STREAM_EXT).toByte()
+        val streamFlags = allocatedDirectoryCore?.let { updatedStreamFlags(it.streamFlags, it.noFatChain) } ?: 0
+        stream[1] = streamFlags.toByte()
+        stream[3] = name.length.toByte()
+        val firstCluster = allocatedDirectoryCore?.firstCluster?.toInt() ?: 0
+        val dataLength = allocatedDirectoryCore?.dataLength ?: 0L
+        val validDataLength = allocatedDirectoryCore?.validDataLength ?: 0L
+        putU64le(stream, 8, validDataLength)
+        putU32le(stream, 20, firstCluster)
+        putU64le(stream, 24, dataLength)
+
+        val parts = ArrayList<ByteArray>(2 + nameEntries.size)
+        parts += primary
+        parts += stream
+        parts.addAll(nameEntries)
+        val checksum = computeEntrySetChecksum(parts)
+        putU16le(primary, 2, checksum)
+        return concatChunks(parts, parts.sumOf { it.size })
+    }
+
+    private fun buildFileNameEntries(name: String): List<ByteArray> {
+        val result = mutableListOf<ByteArray>()
+        var offset = 0
+        while (offset < name.length) {
+            val entry = ByteArray(DIR_ENTRY_SIZE)
+            entry[0] = (0x80 or TYPE_FILE_NAME).toByte()
+            val part = name.substring(offset, min(offset + FILE_NAME_CHARS_PER_ENTRY, name.length))
+            val encoded = part.toByteArray(Charsets.UTF_16LE)
+            System.arraycopy(encoded, 0, entry, FILE_NAME_UTF16_OFFSET, encoded.size)
+            result += entry
+            offset += FILE_NAME_CHARS_PER_ENTRY
+        }
+        return result
+    }
+
+    private fun computeEntrySetChecksum(entries: List<ByteArray>): Int {
+        var sum = 0
+        entries.forEachIndexed { entryIndex, entry ->
+            for (i in entry.indices) {
+                if (entryIndex == 0 && (i == 2 || i == 3)) continue
+                val value = entry[i].toInt() and 0xFF
+                sum = (((sum ushr 1) or ((sum and 1) shl 15)) + value) and 0xFFFF
+            }
+        }
+        return sum
+    }
+
+    private fun fileNameEntryCount(name: String): Int {
+        return if (name.isEmpty()) 0 else (name.length + FILE_NAME_CHARS_PER_ENTRY - 1) / FILE_NAME_CHARS_PER_ENTRY
+    }
+
+    private fun validateNewChildName(name: String) {
+        require(name.isNotEmpty()) { "Entry name must not be empty" }
+        require(name != "." && name != "..") { "Special names are not supported: $name" }
+        require('/' !in name) { "Entry name must not contain '/': $name" }
+        require(' ' !in name) { "Entry name must not contain NUL" }
+        require(name.length <= MAX_FILE_NAME_CHARS) { "Entry name is too long: ${name.length} > $MAX_FILE_NAME_CHARS" }
     }
 
     internal suspend fun listDirectory(
@@ -1067,11 +1404,13 @@ class ExFATFS(
         private const val TYPE_ALLOCATION_BITMAP = 0x01
         private const val FILE_NAME_UTF16_OFFSET = 2
         private const val FILE_NAME_UTF16_BYTES = 30
+        private const val FILE_NAME_CHARS_PER_ENTRY = 15
         private const val CLUSTERS_OFFSET = 2
         private const val ATTR_DIRECTORY = 0x0010
         private const val STREAM_FLAG_NO_FAT_CHAIN = 0x02
         private const val MAX_ROOT_DIR_BYTES_SAFETY = 256L * 1024L * 1024L
         private const val ZERO_CHUNK_SIZE = 64 * 1024
+        private const val MAX_FILE_NAME_CHARS = 255
 
         private fun clustersForSize(size: Long, bytesPerCluster: Long): Int {
             if (size <= 0L) return 0

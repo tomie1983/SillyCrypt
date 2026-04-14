@@ -16,6 +16,7 @@ import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
+import androidx.navigation.compose.navigation
 import androidx.navigation.compose.rememberNavController
 import com.dev.sillycrypt.presentation.screens.CreateVolumeScreen
 import com.dev.sillycrypt.presentation.screens.OpenVolumeScreen
@@ -74,12 +75,13 @@ fun AppNavHost(
     ) { innerPadding ->
         NavHost(
             navController = navController,
-            startDestination = AppDestination.PickFile.route
+            startDestination = AppDestination.PickFileNav.route
         ) {
-            composable(AppDestination.PickFile.route) {
-                OpenVolumeScreen(innerPadding = innerPadding, closeActivity = closeActivity)
+            navigation(AppDestination.PickFile.route, AppDestination.PickFileNav.route) {
+                composable(AppDestination.PickFile.route) {
+                    OpenVolumeScreen(innerPadding = innerPadding, closeActivity = closeActivity)
+                }
             }
-
             composable(AppDestination.CreateFile.route) {
                 CreateVolumeScreen(innerPadding = innerPadding, closeActivity = closeActivity)
             }
