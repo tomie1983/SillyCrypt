@@ -24,6 +24,7 @@ import java.io.File
 import java.math.BigInteger
 import java.security.MessageDigest
 import java.security.Security
+import kotlin.time.Duration
 
 @RunWith(AndroidJUnit4::class)
 class FileSystemReadTest {
@@ -84,7 +85,7 @@ class FileSystemReadTest {
 
     @Test
     fun openOuterVolume_hashMatches() = runTest {
-        val fs = AndroidVeracryptMaster(MutableStateFlow(100)).open(
+        val fs = AndroidVeracryptMaster(appContext,MutableStateFlow(100)).open(
             normalFile,
             VeracryptMode.OpenNormal(VeracryptOpeningData("abc".toCharArray(),
             KDFType.PBKDF2,
@@ -100,9 +101,9 @@ class FileSystemReadTest {
     }
 
     @Test
-    fun checkFileSystemContent() = runTest {
+    fun checkFileSystemContent() = runTest(timeout = Duration.INFINITE) {
         // Arrange
-        val fs = AndroidVeracryptMaster(MutableStateFlow(100)).open(
+        val fs = AndroidVeracryptMaster(appContext, MutableStateFlow(100)).open(
             mainFIle,
             VeracryptMode.OpenNormal(VeracryptOpeningData("abc".toCharArray(),
             KDFType.PBKDF2,

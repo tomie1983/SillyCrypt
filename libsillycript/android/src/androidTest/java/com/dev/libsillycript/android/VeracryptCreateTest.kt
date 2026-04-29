@@ -68,7 +68,7 @@ class VeracryptCreateTest {
 
         // 1) create ----------------------------------------------------------
 
-        AndroidVeracryptMaster(MutableStateFlow(100)).createRaw(
+        AndroidVeracryptMaster(ctx, MutableStateFlow(100)).createRaw(
             factory = UsualFileFactory(scratch),
             data = listOf(
                 VeracryptData(
@@ -87,7 +87,7 @@ class VeracryptCreateTest {
         assertTrue("Container not written", scratch.length() > 0)
 
         // 2) open & verify read/write ---------------------------------------
-        AndroidVeracryptMaster(MutableStateFlow(100)).openRaw(
+        AndroidVeracryptMaster(ctx,MutableStateFlow(100)).openRaw(
             scratch,
             VeracryptMode.OpenNormal(VeracryptOpeningData(OUTER_PWD.toCharArray(),
             KDFType.PBKDF2,
@@ -122,7 +122,7 @@ class VeracryptCreateTest {
 
         // 1) create ----------------------------------------------------------
 
-        AndroidVeracryptMaster(MutableStateFlow(100)).createRaw(
+        AndroidVeracryptMaster(ctx,MutableStateFlow(100)).createRaw(
             factory = UsualFileFactory(scratch),
             data = listOf(
                 VeracryptData(
@@ -150,7 +150,7 @@ class VeracryptCreateTest {
 
 
         // 2-A) open *outer* --------------------------------------------------
-        AndroidVeracryptMaster(MutableStateFlow(100)).openRaw(
+        AndroidVeracryptMaster(ctx,MutableStateFlow(100)).openRaw(
             scratch,
             VeracryptMode.OpenNormal(VeracryptOpeningData(OUTER_PWD.toCharArray(),
             KDFType.PBKDF2,
@@ -165,7 +165,7 @@ class VeracryptCreateTest {
         }
 
         // 2-B) open *hidden* -------------------------------------------------
-        AndroidVeracryptMaster(MutableStateFlow(100)).openRaw(
+        AndroidVeracryptMaster(ctx,MutableStateFlow(100)).openRaw(
             scratch,
             VeracryptMode.OpenHidden(VeracryptOpeningData(HIDDEN_PWD.toCharArray(),
             KDFType.PBKDF2,
@@ -191,7 +191,7 @@ class VeracryptCreateTest {
 
         // create 2 MB outer-only container
 
-        AndroidVeracryptMaster(MutableStateFlow(100)).createRaw(
+        AndroidVeracryptMaster(ctx,MutableStateFlow(100)).createRaw(
             factory = UsualFileFactory(scratch),
             data = listOf(
                 VeracryptData(
@@ -208,7 +208,7 @@ class VeracryptCreateTest {
         )
 
 
-        AndroidVeracryptMaster(MutableStateFlow(100)).openRaw(
+        AndroidVeracryptMaster(ctx,MutableStateFlow(100)).openRaw(
             scratch,
             VeracryptMode.OpenNormal(VeracryptOpeningData(OUTER_PWD.toCharArray(),
             KDFType.PBKDF2,

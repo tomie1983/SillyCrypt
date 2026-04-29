@@ -70,7 +70,7 @@ class VeracryptVolumeTest {
     @OptIn(ExperimentalCoroutinesApi::class)
     @Test
     fun openNormalVolume_hashMatches() = runTest {
-        AndroidVeracryptMaster(MutableStateFlow(100)).openRaw(
+        AndroidVeracryptMaster(appContext,MutableStateFlow(100)).openRaw(
             normalFile,
             VeracryptMode.OpenNormal(VeracryptOpeningData("abc".toCharArray(),
             KDFType.PBKDF2,
@@ -84,7 +84,7 @@ class VeracryptVolumeTest {
 
     @Test
     fun openOuterVolume_hashMatches() = runTest {
-        AndroidVeracryptMaster(MutableStateFlow(100)).openRaw(
+        AndroidVeracryptMaster(appContext, MutableStateFlow(100)).openRaw(
             outerFile,
             VeracryptMode.OpenNormal(VeracryptOpeningData("abc".toCharArray(),
             KDFType.PBKDF2,
@@ -96,7 +96,7 @@ class VeracryptVolumeTest {
 
     @Test
     fun openHiddenVolume_hashMatches() = runTest {
-        AndroidVeracryptMaster(MutableStateFlow(100)).openRaw(
+        AndroidVeracryptMaster(appContext,MutableStateFlow(100)).openRaw(
             outerFile,
             VeracryptMode.OpenHidden(VeracryptOpeningData("abcd".toCharArray(),
             KDFType.PBKDF2,
@@ -111,7 +111,7 @@ class VeracryptVolumeTest {
 
     @Test(expected = SecurityException::class)
     fun wrongPassword_throwsSecurityException() = runTest {
-        AndroidVeracryptMaster(MutableStateFlow(100)).openRaw(
+        AndroidVeracryptMaster(appContext, MutableStateFlow(100)).openRaw(
             normalFile,
             VeracryptMode.OpenNormal(VeracryptOpeningData("wrong".toCharArray(),
             KDFType.PBKDF2,
@@ -127,7 +127,7 @@ class VeracryptVolumeTest {
         try {
             normalFile.copyTo(tmp, overwrite = true)
 
-            AndroidVeracryptMaster(MutableStateFlow(100)).openRaw(
+            AndroidVeracryptMaster(appContext, MutableStateFlow(100)).openRaw(
                 tmp,
                 VeracryptMode.OpenNormal(VeracryptOpeningData("abc".toCharArray(),
                 KDFType.PBKDF2,

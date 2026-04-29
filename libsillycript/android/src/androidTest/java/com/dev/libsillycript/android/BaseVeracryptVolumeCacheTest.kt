@@ -1,6 +1,7 @@
 package com.dev.libsillycript.android
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
 import com.dev.exfat.data.FileRandomAccessData
 import com.dev.libsillycript.core.VeracryptData
 import com.dev.libsillycript.core.VeracryptMode
@@ -25,9 +26,11 @@ class BaseVeracryptVolumeCacheTest {
 
     private lateinit var tempDir: File
 
+    private val appContext = InstrumentationRegistry.getInstrumentation().context
+
     @Before
     fun setUp() {
-        tempDir = createTempDir(prefix = "veracrypt-cache-test")
+        tempDir = appContext.cacheDir
     }
 
     @After
@@ -45,7 +48,7 @@ class BaseVeracryptVolumeCacheTest {
             fillByte = 0x11
         )
 
-        AndroidVeracryptMaster(MutableStateFlow(100))
+        AndroidVeracryptMaster(appContext, MutableStateFlow(100))
             .openRaw(
                 outerFile,
                 VeracryptMode.OpenNormal(VeracryptOpeningData(
@@ -85,7 +88,7 @@ class BaseVeracryptVolumeCacheTest {
 
         val cache = SharedSectorCache()
 
-        AndroidVeracryptMaster(MutableStateFlow(100))
+        AndroidVeracryptMaster(appContext, MutableStateFlow(100))
             .openRaw(
                 outerFile,
                 VeracryptMode.OpenNormal(VeracryptOpeningData("abc".toCharArray(),
@@ -100,7 +103,7 @@ class BaseVeracryptVolumeCacheTest {
 
                 corruptCiphertextBytes(outerFile, position = 131072, length = 512)
 
-                AndroidVeracryptMaster(MutableStateFlow(100))
+                AndroidVeracryptMaster(appContext,MutableStateFlow(100))
                     .openRaw(
                         outerFile,
                         VeracryptMode.OpenNormal(VeracryptOpeningData("abc".toCharArray(),
@@ -131,7 +134,7 @@ class BaseVeracryptVolumeCacheTest {
             fillByte = 0x44
         )
 
-        AndroidVeracryptMaster(MutableStateFlow(100))
+        AndroidVeracryptMaster(appContext, MutableStateFlow(100))
             .openRaw(
                 outerFile,
                 VeracryptMode.OpenNormal(VeracryptOpeningData("abc".toCharArray(),
@@ -170,7 +173,7 @@ class BaseVeracryptVolumeCacheTest {
             fillByte = 0x55
         )
 
-        AndroidVeracryptMaster(MutableStateFlow(100))
+        AndroidVeracryptMaster(appContext, MutableStateFlow(100))
             .openRaw(
                 outerFile,
                 VeracryptMode.OpenNormal(VeracryptOpeningData("abc".toCharArray(),
@@ -219,7 +222,7 @@ class BaseVeracryptVolumeCacheTest {
         plainSize: Int,
         fillByte: Byte
     ) {
-        AndroidVeracryptMaster(MutableStateFlow(100)).createRaw(
+        AndroidVeracryptMaster(appContext, MutableStateFlow(100)).createRaw(
             factory = UsualFileFactory(outerFile),
             listOf(VeracryptData(
                 plainSize.toLong(),
@@ -234,7 +237,7 @@ class BaseVeracryptVolumeCacheTest {
             ),
         )
 
-        AndroidVeracryptMaster(MutableStateFlow(100))
+        AndroidVeracryptMaster(appContext,MutableStateFlow(100))
             .openRaw(
                 outerFile,
                 VeracryptMode.OpenNormal(VeracryptOpeningData("abc".toCharArray(),
