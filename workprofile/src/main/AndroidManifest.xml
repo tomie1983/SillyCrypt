@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+    <uses-feature android:name="android.software.device_admin" android:required="true"/>
+    <uses-feature android:name="android.software.managed_users" android:required="true"/>
+    <uses-permission android:name="android.permission.MANAGE_DEVICE_POLICY_PROFILE_INTERACTION" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SYSTEM_EXEMPTED" />
+
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.MAIN"/>
+        </intent>
+    </queries>
+
+    <application>
+        <activity android:name=".presentation.activities.DummyActivity"
+            android:excludeFromRecents="true"
+            android:launchMode="singleTask"
+            android:theme="@style/Theme.AppCompat.NoActionBar"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.libsillycrypt.workprofile.action.FINALIZE_PROVISION" />
+                <action android:name="com.libsillycrypt.workprofile.START_SERVICE" />
+                <action android:name="com.libsillycrypt.workprofile.TRY_START_SERVICE" />
+                <action android:name="com.libsillycrypt.workprofile.INSTALL_PACKAGE" />
+                <action android:name="com.libsillycrypt.workprofile.UNINSTALL_PACKAGE" />
+                <action android:name="com.libsillycrypt.workprofile.SYNCHRONIZE_PREFERENCE" />
+                <action android:name="com.libsillycrypt.workprofile.PACKAGEINSTALLER_CALLBACK" />
+                <action android:name="com.libsillycrypt.workprofile.DELETE_PROFILE" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+        <receiver
+            android:name=".presentation.receivers.SillyCryptDeviceAdminReceiver"
+            android:label="Work Profile Manager"
+            android:permission="android.permission.BIND_DEVICE_ADMIN"
+            android:exported="true">
+
+            <meta-data
+                android:name="android.app.device_admin"
+                android:resource="@xml/device_admin" />
+
+            <intent-filter>
+                <action android:name="android.app.action.DEVICE_ADMIN_ENABLED" />
+                <action android:name="android.app.action.DEVICE_ADMIN_DISABLED" />
+                <action android:name="android.app.action.PROVISION_MANAGED_PROFILE" />
+                <action android:name="android.app.action.PROFILE_PROVISIONING_COMPLETE" />
+            </intent-filter>
+
+        </receiver>
+        <service android:name=".services.WorkProfileManageService"
+            android:exported="true"
+            android:foregroundServiceType="systemExempted"
+            android:permission="android.permission.BIND_DEVICE_ADMIN"/>
+        <activity
+            android:name=".presentation.activities.FinalizeActivity"
+            android:excludeFromRecents="true"
+            android:launchMode="singleTask"
+            android:theme="@style/Theme.AppCompat.NoActionBar"
+            android:permission="android.permission.BIND_DEVICE_ADMIN"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.app.action.PROVISIONING_SUCCESSFUL" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+
+
+    </application>
+</manifest>

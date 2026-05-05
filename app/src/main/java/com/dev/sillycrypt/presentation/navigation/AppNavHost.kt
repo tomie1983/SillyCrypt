@@ -3,12 +3,14 @@ package com.dev.sillycrypt.presentation.navigation
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Create
+import androidx.compose.material.icons.filled.Work
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.navigation.NavDestination.Companion.hierarchy
@@ -20,6 +22,8 @@ import androidx.navigation.compose.navigation
 import androidx.navigation.compose.rememberNavController
 import com.dev.sillycrypt.presentation.screens.CreateVolumeScreen
 import com.dev.sillycrypt.presentation.screens.OpenVolumeScreen
+import com.libsillycrypt.workprofile.presentation.screens.WorkProfileSelectionScreen
+import kotlinx.coroutines.flow.StateFlow
 
 private data class BottomItem(
     val destination: AppDestination,
@@ -28,13 +32,17 @@ private data class BottomItem(
 
 @Composable
 fun AppNavHost(
-    closeActivity: () -> Unit
+    isWorkProfileAvailable: State<Boolean>,
+    closeActivity: () -> Unit,
+    createProfile: () -> Unit,
+    deleteProfile: () -> Unit
 ) {
     val navController = rememberNavController()
 
     val items = listOf(
         BottomItem(AppDestination.PickFile, Icons.Default.Add),
-        BottomItem(AppDestination.CreateFile, Icons.Default.Create)
+        BottomItem(AppDestination.CreateFile, Icons.Default.Create),
+        BottomItem(AppDestination.ManageWorkProfile, Icons.Default.Work)
     )
 
     Scaffold(
@@ -84,6 +92,11 @@ fun AppNavHost(
             }
             composable(AppDestination.CreateFile.route) {
                 CreateVolumeScreen(innerPadding = innerPadding, closeActivity = closeActivity)
+            }
+            composable(AppDestination.ManageWorkProfile.route) {
+                WorkProfileSelectionScreen(
+                    isWorkProfileAvailable = isWorkProfileAvailable,
+                    createProfile = createProfile, innerPadding = innerPadding, deleteProfileFromUser = deleteProfile)
             }
         }
     }

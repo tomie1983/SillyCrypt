@@ -26,6 +26,7 @@ datastore = "1.2.1"
 serializeVersion = "1.10.0"
 serialization = "2.3.20"
 immutable = "0.4.0"
+activityVersion = "1.13.0"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -62,6 +63,8 @@ lifecycle-viewmodel-ktx = { module = "androidx.lifecycle:lifecycle-viewmodel-ktx
 datastore = { group = "androidx.datastore", name = "datastore", version.ref = "datastore"  }
 kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "serializeVersion" }
 immutable-collections = { group = "org.jetbrains.kotlinx", name = "kotlinx-collections-immutable", version.ref = "immutable" }
+android-activity = { group = "androidx.activity", name = "activity-ktx", version.ref = "activityVersion" }
+
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }

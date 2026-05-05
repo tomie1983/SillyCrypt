@@ -24,4 +24,9 @@ sealed class AppDestination(
         route = "create_file",
         label = "Create"
     )
+
+    data object ManageWorkProfile: AppDestination(
+        route = "manage_work_frofile",
+        label = "Work profile"
+    )
 }

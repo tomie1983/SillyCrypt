@@ -12,7 +12,7 @@ android {
 
     defaultConfig {
         applicationId = "com.dev.sillycrypt"
-        minSdk = 26
+        minSdk = 28
         targetSdk = 36
         versionCode = 1
         versionName = "1.0"
@@ -74,4 +74,6 @@ dependencies {
     debugImplementation(libs.androidx.ui.test.manifest)
     implementation(project(":libsillycript:android"))
     implementation(project(":exfat-android"))
+    implementation(project(":core:serialization"))
+    implementation(project(":workprofile"))
 }

@@ -11,6 +11,7 @@ import com.dev.sillycrypt.domain.entities.AppSettings
 import com.dev.sillycrypt.domain.repository.CreateVolumeRepository
 import com.dev.sillycrypt.domain.repository.ManageVolumeRepository
 import com.dev.sillycrypt.domain.repository.SettingsRepository
+import com.libsillycrypt.core.serialization.BaseSerializer
 import dagger.Binds
 import dagger.Module
 import dagger.Provides
@@ -48,11 +49,16 @@ abstract class RepositoryModule {
 
         @Provides
         @Singleton
+        fun provideSerializer(): BaseSerializer<AppSettings> = AppSettingsSerializer()
+
+        @Provides
+        @Singleton
         fun provideSettingsDataStore(
-            @ApplicationContext context: Context
+            @ApplicationContext context: Context,
+            serializer: BaseSerializer<AppSettings>
         ): DataStore<AppSettings> {
             return DataStoreFactory.create(
-                serializer = AppSettingsSerializer,
+                serializer = serializer,
                 produceFile = {
                     File(context.filesDir, SETTINGS_FILE)
                 }
