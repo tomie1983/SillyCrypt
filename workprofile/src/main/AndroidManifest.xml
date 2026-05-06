@@ -29,7 +29,6 @@
                 <action android:name="com.libsillycrypt.workprofile.UNINSTALL_PACKAGE" />
                 <action android:name="com.libsillycrypt.workprofile.SYNCHRONIZE_PREFERENCE" />
                 <action android:name="com.libsillycrypt.workprofile.PACKAGEINSTALLER_CALLBACK" />
-                <action android:name="com.libsillycrypt.workprofile.DELETE_PROFILE" />
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
         </activity>

@@ -68,11 +68,12 @@ class WorkProfileManageService: Service() {
             app: ApplicationInfoWrapper,
             callback: IAppInstallCallback
         ) {
+            Log.w("installation","${app.isSystem} ${app.packageName} ${app.sourceDir} ${app.splitApks} $startActivityProxy")
             if (!app.isSystem) {
                 // Installing a non-system app requires firing up PackageInstaller
                 // Delegate this operation to DummyActivity because
                 // Only it can receive a result
-                val intent: Intent = Intent(DummyActivity.INSTALL_PACKAGE)
+                val intent = Intent(DummyActivity.INSTALL_PACKAGE)
                 intent.setComponent(ComponentName(this@WorkProfileManageService, DummyActivity::class.java))
                 intent.putExtra("package", app.packageName)
                 intent.putExtra("apk", app.sourceDir)
@@ -87,7 +88,7 @@ class WorkProfileManageService: Service() {
                 intent.putExtra("callback", callbackExtra)
                 intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 DummyActivity.registerSameProcessRequest(intent)
-                if (startActivityProxy != null) startActivityProxy!!.startActivity(intent)
+                startActivityProxy?.startActivity(intent)
             } else {
                 if (isProfileOwner) {
                     adminComponent?.let {

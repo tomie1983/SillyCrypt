@@ -124,11 +124,6 @@ class WorkProfileUtils @Inject constructor(
             IntentFilter(DummyActivity.UNINSTALL_PACKAGE),
             DevicePolicyManager.FLAG_MANAGED_CAN_ACCESS_PARENT
         )
-        manager.addCrossProfileIntentFilter(
-            adminComponent,
-            IntentFilter(DummyActivity.DELETE_PROFILE),
-            DevicePolicyManager.FLAG_MANAGED_CAN_ACCESS_PARENT
-        )
 
         // Allow ACTION_SEND and ACTION_SEND_MULTIPLE to cross from managed to parent
         val actionSendFilter = IntentFilter()

@@ -5,7 +5,11 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
+import android.content.pm.PackageManager
 import android.os.IBinder
+import android.util.Log
+import com.libsillycrypt.workprofile.domain.entities.ApplicationInfoWrapper
+import com.libsillycrypt.workprofile.services.IAppInstallCallback
 import com.libsillycrypt.workprofile.services.IStartActivityProxy
 import com.libsillycrypt.workprofile.services.IWorkProfileManageService
 import com.libsillycrypt.workprofile.services.WorkProfileManageService
@@ -25,6 +29,19 @@ class ServiceUtils @Inject constructor(
 
     fun deleteWorkProfile(): Boolean {
         return serviceWork?.deleteWorkProfile() == true
+    }
+
+    fun installApp() {
+        val info = context.packageManager.getInstalledApplications(
+            PackageManager.GET_META_DATA
+        ).find { it.packageName == "com.oasisfeng.island" }
+        Log.w("installation",serviceWork.toString())
+        val callback = object: IAppInstallCallback.Stub() {
+            override fun callback(result: Int) {
+               Log.w("installation",result.toString())
+            }
+        }
+        serviceWork?.installApp(ApplicationInfoWrapper(info),callback)
     }
 
     fun bindMainService(tryStartWorkService: () -> Unit) {
@@ -49,6 +66,7 @@ class ServiceUtils @Inject constructor(
 
     fun workServiceSetStartActivityProxy(proxy: IStartActivityProxy) {
         serviceWork?.setStartActivityProxy(proxy)
+        installApp()
     }
 
     fun bindService(conn: ServiceConnection, foreground: Boolean) {

@@ -3,6 +3,7 @@ package com.dev.sillycrypt.presentation.navigation
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Create
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Work
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
@@ -22,6 +23,7 @@ import androidx.navigation.compose.navigation
 import androidx.navigation.compose.rememberNavController
 import com.dev.sillycrypt.presentation.screens.CreateVolumeScreen
 import com.dev.sillycrypt.presentation.screens.OpenVolumeScreen
+import com.dev.sillycrypt.settings.presentation.screens.SettingsScreen
 import com.libsillycrypt.workprofile.presentation.screens.WorkProfileSelectionScreen
 
 private data class BottomItem(
@@ -40,7 +42,8 @@ fun AppNavHost(
     val items = listOf(
         BottomItem(AppDestination.PickFile, Icons.Default.Add),
         BottomItem(AppDestination.CreateFile, Icons.Default.Create),
-        BottomItem(AppDestination.ManageWorkProfile, Icons.Default.Work)
+        BottomItem(AppDestination.ManageWorkProfile, Icons.Default.Work),
+        BottomItem(AppDestination.Settings, Icons.Default.Settings)
     )
 
     Scaffold(
@@ -95,6 +98,9 @@ fun AppNavHost(
                 WorkProfileSelectionScreen(
                     isWorkProfileAvailable = isWorkProfileAvailable,
                     createProfile = createProfile, innerPadding = innerPadding)
+            }
+            composable(AppDestination.Settings.route) {
+                SettingsScreen(innerPadding)
             }
         }
     }

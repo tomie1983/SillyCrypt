@@ -96,7 +96,19 @@ class DummyActivity: AppCompatActivity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        Log.w("workProfile","newIntent")
+
+        if (intent.action == PACKAGEINSTALLER_CALLBACK) {
+            val status = intent.extras?.getInt(PackageInstaller.EXTRA_STATUS)
+
+            when (status) {
+                PackageInstaller.STATUS_PENDING_USER_ACTION -> startActivity(
+                    intent.extras?.get(Intent.EXTRA_INTENT) as Intent?
+                )
+
+                PackageInstaller.STATUS_SUCCESS -> appInstallFinished(RESULT_OK)
+                else -> appInstallFinished(RESULT_CANCELED)
+            }
+        }
     }
 
     override fun onRequestPermissionsResult(
@@ -145,15 +157,10 @@ class DummyActivity: AppCompatActivity() {
 
                 INSTALL_PACKAGE -> actionInstallPackage()
                 UNINSTALL_PACKAGE -> actionUninstallPackage()
-                DELETE_PROFILE -> actionDeleteProfile()
                 FINALIZE_PROVISION -> actionFinalizeProvision()
                 else -> finish()
             }
         }
-    }
-
-    private fun actionDeleteProfile() {
-        viewModel.deleWorkProfile()
     }
 
     private fun actionInstallPackage() {
@@ -161,6 +168,7 @@ class DummyActivity: AppCompatActivity() {
         if (intent.hasExtra("package")) {
             uri = Uri.fromParts("package", intent.getStringExtra("package"), null)
         }
+        Log.w("installationactionInstallPackage", uri.toString())
         val policy = StrictMode.getVmPolicy()
         if (intent.hasExtra("apk")) {
             // I really have no idea about why the "package:" uri do not work
@@ -358,7 +366,6 @@ class DummyActivity: AppCompatActivity() {
         const val TRY_START_SERVICE: String = "com.libsillycrypt.workprofile.TRY_START_SERVICE"
         const val INSTALL_PACKAGE: String = "com.libsillycrypt.workprofile.INSTALL_PACKAGE"
         const val UNINSTALL_PACKAGE: String = "com.libsillycrypt.workprofile.UNINSTALL_PACKAGE"
-        const val DELETE_PROFILE: String = "com.libsillycrypt.workprofile.DELETE_PROFILE"
         const val SYNCHRONIZE_PREFERENCE: String =
             "com.libsillycrypt.workprofile.SYNCHRONIZE_PREFERENCE"
         const val PACKAGEINSTALLER_CALLBACK: String =

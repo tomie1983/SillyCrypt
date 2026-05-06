@@ -76,4 +76,5 @@ dependencies {
     implementation(project(":exfat-android"))
     implementation(project(":core:serialization"))
     implementation(project(":workprofile"))
+    implementation(project(":settings"))
 }

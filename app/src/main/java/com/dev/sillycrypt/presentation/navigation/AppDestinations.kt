@@ -29,4 +29,9 @@ sealed class AppDestination(
         route = "manage_work_frofile",
         label = "Work profile"
     )
+
+    data object Settings: AppDestination(
+        route = "settings",
+        label = "Settings"
+    )
 }
