@@ -12,13 +12,4 @@ class DummyActivityVM @Inject constructor(
     private val repository: WorkProfileRepository
 ): ViewModel() {
 
-    fun setProvisionedStatus(status: Boolean) {
-        viewModelScope.launch {
-            repository.setProvisionedStatus(status)
-        }
-    }
-
-    fun deleWorkProfile() {
-        repository.deleteProfile()
-    }
 }

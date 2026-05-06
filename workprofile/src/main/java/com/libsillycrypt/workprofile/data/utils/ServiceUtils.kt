@@ -7,6 +7,7 @@ import android.content.Intent
 import android.content.ServiceConnection
 import android.content.pm.PackageManager
 import android.os.IBinder
+import android.os.RemoteException
 import android.util.Log
 import com.libsillycrypt.workprofile.domain.entities.ApplicationInfoWrapper
 import com.libsillycrypt.workprofile.services.IAppInstallCallback
@@ -31,14 +32,30 @@ class ServiceUtils @Inject constructor(
         return serviceWork?.deleteWorkProfile() == true
     }
 
-    fun installApp() {
+    fun installApps(apps: List<String>) {
+        Log.w("installation",serviceWork.toString())
+        val service = serviceWork ?: return
+        val packageManager = context.packageManager
+
+        val appsPackages = apps.map {
+            ApplicationInfoWrapper(packageManager.getApplicationInfo(it, 0))
+
+        }
+        val callback = object : IAppInstallCallback.Stub() {
+            override fun callback(result: Int) {
+                Log.w("installCallback",result.toString())
+            }
+        }
+        service.installApps(appsPackages, callback)
+    }
+
+    fun installApp(packageName: String) {
         val info = context.packageManager.getInstalledApplications(
             PackageManager.GET_META_DATA
-        ).find { it.packageName == "com.oasisfeng.island" }
-        Log.w("installation",serviceWork.toString())
+        ).find { it.packageName == packageName }
         val callback = object: IAppInstallCallback.Stub() {
             override fun callback(result: Int) {
-               Log.w("installation",result.toString())
+
             }
         }
         serviceWork?.installApp(ApplicationInfoWrapper(info),callback)
@@ -66,7 +83,6 @@ class ServiceUtils @Inject constructor(
 
     fun workServiceSetStartActivityProxy(proxy: IStartActivityProxy) {
         serviceWork?.setStartActivityProxy(proxy)
-        installApp()
     }
 
     fun bindService(conn: ServiceConnection, foreground: Boolean) {

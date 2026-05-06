@@ -17,6 +17,7 @@ import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
 import java.io.File
 import javax.inject.Singleton
 
@@ -40,7 +41,7 @@ abstract class WorkProfileModule {
 
         @Provides
         @Singleton
-        fun provideWorkProfileStatusFlow(): MutableSharedFlow<Boolean> = MutableSharedFlow()
+        fun provideWorkProfileStatusFlow(): MutableStateFlow<Boolean> = MutableStateFlow(false)
 
         @Provides
         @Singleton

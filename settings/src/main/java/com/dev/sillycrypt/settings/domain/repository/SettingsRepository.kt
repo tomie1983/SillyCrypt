@@ -5,6 +5,8 @@ import kotlinx.coroutines.flow.Flow
 
 interface SettingsRepository {
     val settings: Flow<AppSettings>
+
+    suspend fun getAppsToInstall(): List<String>
     suspend fun setTimeout(timeout: Long)
     suspend fun markPackageForInstallation(packageName: String, install: Boolean)
 }

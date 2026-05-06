@@ -10,6 +10,7 @@ import android.content.pm.ResolveInfo
 import android.os.UserManager
 import android.util.Log
 import com.libsillycrypt.workprofile.presentation.activities.DummyActivity
+import com.libsillycrypt.workprofile.presentation.activities.DummyActivity.Companion.INSTALL_PACKAGES
 import com.libsillycrypt.workprofile.presentation.receivers.SillyCryptDeviceAdminReceiver
 import java.io.IOException
 import java.io.InputStream
@@ -116,6 +117,11 @@ class WorkProfileUtils @Inject constructor(
         manager.addCrossProfileIntentFilter(
             adminComponent,
             IntentFilter(DummyActivity.INSTALL_PACKAGE),
+            DevicePolicyManager.FLAG_MANAGED_CAN_ACCESS_PARENT
+        )
+        manager.addCrossProfileIntentFilter(
+            adminComponent,
+            IntentFilter(INSTALL_PACKAGES),
             DevicePolicyManager.FLAG_MANAGED_CAN_ACCESS_PARENT
         )
 

@@ -3,10 +3,11 @@ package com.libsillycrypt.workprofile.domain.repository
 import com.libsillycrypt.workprofile.domain.entities.WorkProfileSettings
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.StateFlow
 
 interface WorkProfileRepository {
 
-    val isWorkProfileAvailable: SharedFlow<Boolean>
+    val isWorkProfileAvailable: StateFlow<Boolean>
 
     suspend fun loadFromSettings()
     suspend fun setProfileName(name: String)

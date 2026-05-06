@@ -10,6 +10,7 @@ interface IWorkProfileManageService {
     void stopShelterService(boolean kill);
     boolean deleteWorkProfile();
     void installApp(in ApplicationInfoWrapper app, IAppInstallCallback callback);
+    void installApps(in List<ApplicationInfoWrapper> apps, IAppInstallCallback callback);
     void uninstallApp(in ApplicationInfoWrapper app, IAppInstallCallback callback);
     void setStartActivityProxy(in IStartActivityProxy proxy);
 }

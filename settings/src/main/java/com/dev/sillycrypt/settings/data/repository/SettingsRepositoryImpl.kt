@@ -6,6 +6,7 @@ import com.dev.sillycrypt.settings.domain.entities.AppSettings
 import com.dev.sillycrypt.settings.domain.repository.SettingsRepository
 import com.sillycrypt.mapper.Mapper
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import javax.inject.Inject
 
@@ -17,6 +18,10 @@ class SettingsRepositoryImpl @Inject constructor(
         get() = settingsDataStore.data.map {
             mapper.map(it)
         }
+
+    override suspend fun getAppsToInstall(): List<String> {
+        return settingsDataStore.data.first().packagesToInstall
+    }
 
     override suspend fun setTimeout(timeout: Long) {
         settingsDataStore.updateData { it.copy(timeoutMillis = timeout) }

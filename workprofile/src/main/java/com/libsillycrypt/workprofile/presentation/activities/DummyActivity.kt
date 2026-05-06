@@ -1,11 +1,15 @@
 package com.libsillycrypt.workprofile.presentation.activities
 
 import android.Manifest
+import android.R.attr.action
+import android.app.Activity
+import android.app.ActivityOptions
 import android.app.PendingIntent
 import android.app.admin.DevicePolicyManager
 import android.content.ComponentName
 import android.content.Intent
 import android.content.ServiceConnection
+import android.content.pm.PackageInfo
 import android.content.pm.PackageInstaller
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -23,6 +27,7 @@ import androidx.lifecycle.lifecycleScope
 import com.libsillycrypt.workprofile.data.utils.AuthenticationUtility
 import com.libsillycrypt.workprofile.data.utils.ServiceUtils
 import com.libsillycrypt.workprofile.data.utils.WorkProfileUtils
+import com.libsillycrypt.workprofile.domain.entities.ApplicationInfoWrapper
 import com.libsillycrypt.workprofile.presentation.viewmodels.DummyActivityVM
 import com.libsillycrypt.workprofile.services.IAppInstallCallback
 import dagger.hilt.android.AndroidEntryPoint
@@ -46,7 +51,10 @@ class DummyActivity: AppCompatActivity() {
     @Inject
     lateinit var serviceUtils: ServiceUtils
 
-    private val viewModel: DummyActivityVM by viewModels()
+    private val installQueue = ArrayDeque<ApplicationInfoWrapper>()
+    private var installCallback: IAppInstallCallback? = null
+
+    private var waitingForPackageInstallerCallback = false
 
     private var dpm: DevicePolicyManager? = null
     private var isProfileOwner: Boolean = false
@@ -96,17 +104,67 @@ class DummyActivity: AppCompatActivity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
+        setIntent(intent)
 
         if (intent.action == PACKAGEINSTALLER_CALLBACK) {
-            val status = intent.extras?.getInt(PackageInstaller.EXTRA_STATUS)
+            handlePackageInstallerCallback(intent)
+        }
+    }
 
-            when (status) {
-                PackageInstaller.STATUS_PENDING_USER_ACTION -> startActivity(
-                    intent.extras?.get(Intent.EXTRA_INTENT) as Intent?
+    private fun handlePackageInstallerCallback(callbackIntent: Intent) {
+        callbackIntent.extras?.keySet()?.forEach { key ->
+            Log.w("installQueue", "$key = ${callbackIntent.extras?.get(key)}")
+        }
+
+        val status = callbackIntent.getIntExtra(
+            PackageInstaller.EXTRA_STATUS,
+            PackageInstaller.STATUS_FAILURE
+        )
+
+        val message = callbackIntent.getStringExtra(
+            PackageInstaller.EXTRA_STATUS_MESSAGE
+        )
+
+        val installedPackageName = callbackIntent.getStringExtra(
+            PackageInstaller.EXTRA_PACKAGE_NAME
+        )
+
+        Log.w(
+            "installQueue",
+            "status=$status package=$installedPackageName message=$message"
+        )
+
+        when (status) {
+            PackageInstaller.STATUS_PENDING_USER_ACTION -> {
+                val confirmationIntent = callbackIntent.getParcelableExtra<Intent>(
+                    Intent.EXTRA_INTENT
                 )
 
-                PackageInstaller.STATUS_SUCCESS -> appInstallFinished(RESULT_OK)
-                else -> appInstallFinished(RESULT_CANCELED)
+                Log.w("installQueue", "pending user action intent=$confirmationIntent")
+
+                if (confirmationIntent != null) {
+                    startActivityForResult(
+                        confirmationIntent,
+                        REQUEST_CONFIRM_INSTALL
+                    )
+                } else {
+                    waitingForPackageInstallerCallback = false
+                    installNextFromQueue()
+                }
+            }
+
+            PackageInstaller.STATUS_SUCCESS -> {
+                Log.w("installQueue", "install success package=$installedPackageName")
+
+                waitingForPackageInstallerCallback = false
+                installNextFromQueue()
+            }
+
+            else -> {
+                Log.w("installQueue", "install failed: $message")
+
+                waitingForPackageInstallerCallback = false
+                installNextFromQueue()
             }
         }
     }
@@ -157,67 +215,141 @@ class DummyActivity: AppCompatActivity() {
 
                 INSTALL_PACKAGE -> actionInstallPackage()
                 UNINSTALL_PACKAGE -> actionUninstallPackage()
+                INSTALL_PACKAGES -> actionInstallPackages()
                 FINALIZE_PROVISION -> actionFinalizeProvision()
                 else -> finish()
             }
         }
     }
 
+    private fun actionInstallPackages() {
+        val apps = intent.getParcelableArrayListExtra<ApplicationInfoWrapper>(EXTRA_APPS)
+            ?: arrayListOf()
+
+        val callbackExtra = intent.getBundleExtra("callback")
+        installCallback = IAppInstallCallback.Stub.asInterface(
+            callbackExtra?.getBinder("callback")
+        )
+
+        installQueue.clear()
+        installQueue.addAll(apps)
+
+        installNextFromQueue()
+    }
+
+    private fun installNextFromQueue() {
+        if (waitingForPackageInstallerCallback) {
+            Log.w("installQueue", "Already waiting for PackageInstaller callback")
+            return
+        }
+
+        val app = installQueue.removeFirstOrNull()
+
+        if (app == null) {
+            try {
+                installCallback?.callback(RESULT_OK)
+            } catch (e: RemoteException) {
+                Log.w("installQueue", e.stackTraceToString())
+            }
+
+            finish()
+            return
+        }
+
+        Log.w("installQueue", "installing ${app.packageName}")
+
+        val uri = Uri.fromFile(File(app.sourceDir))
+
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                waitingForPackageInstallerCallback = true
+
+                actionInstallPackageQ(
+                    packageName = app.packageName,
+                    uri = uri,
+                    splitApks = app.splitApks?.filterNotNull()?.toTypedArray()
+                )
+            } else {
+                val installIntent = Intent(Intent.ACTION_INSTALL_PACKAGE, uri).apply {
+                    putExtra(Intent.EXTRA_INSTALLER_PACKAGE_NAME, packageName)
+                    putExtra(Intent.EXTRA_NOT_UNKNOWN_SOURCE, true)
+                    putExtra(Intent.EXTRA_RETURN_RESULT, true)
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
+
+                startActivityForResult(installIntent, REQUEST_LEGACY_INSTALL_PACKAGE)
+            }
+        } catch (e: Exception) {
+            waitingForPackageInstallerCallback = false
+
+            Log.w("installQueue", e.stackTraceToString())
+
+            installNextFromQueue()
+        }
+    }
+
     private fun actionInstallPackage() {
         var uri: Uri? = null
-        if (intent.hasExtra("package")) {
-            uri = Uri.fromParts("package", intent.getStringExtra("package"), null)
-        }
-        Log.w("installationactionInstallPackage", uri.toString())
-        val policy = StrictMode.getVmPolicy()
-        if (intent.hasExtra("apk")) {
-            // I really have no idea about why the "package:" uri do not work
-            // after Android O, anyway we fall back to using the apk path...
-            // Since I have plan to support pre-O in later versions, I keep this
-            // branch in case that we reduce minSDK in the future.
-            uri = Uri.fromFile(File(intent.getStringExtra("apk")))
-        } else if (intent.hasExtra("direct_install_apk")) {
-            // Directly install an APK inside the profile
-            // The APK will be an Uri from our own FileProviderProxy
-            // which points to an opened Fd in another profile.
-            // We must close the Fd when we finish.
-            uri = intent.getParcelableExtra<Uri?>("direct_install_apk")
+
+        val packageName = intent.getStringExtra("package")
+        val apkPath = intent.getStringExtra("apk")
+        val splitApks = intent.getStringArrayExtra("split_apks")
+
+        Log.w("installPackage", "package=$packageName")
+        Log.w("installPackage", "apk=$apkPath")
+        Log.w("installPackage", "splitApks=${splitApks?.contentToString()}")
+
+        if (packageName != null) {
+            uri = Uri.fromParts("package", packageName, null)
         }
 
-        // A permissive VmPolicy must be set to work around
-        // the limitation on cross-application Uri
-        StrictMode.setVmPolicy(VmPolicy.Builder().build())
+        val oldPolicy = StrictMode.getVmPolicy()
 
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                if (apkPath.isNullOrBlank()) {
+                    Log.w("installPackage", "apk path is null, cannot install via PackageInstaller")
+                    appInstallFinished(Activity.RESULT_CANCELED)
+                    return
+                }
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            try {
-                // For Q, since we use the more "manual" method of installation,
-                // we have to also pass the split APKs ("Configuration APKs" as Google calls it)
-                // Although these are available since API 26, we don't need to
-                // take care of them for versions before Q since we don't actually
-                // install the APKs before Q.
-                actionInstallPackageQ(uri, intent.getStringArrayExtra("split_apks"))
-            } catch (e: IOException) {
-                throw RuntimeException(e)
+                val apkFile = File(apkPath)
+
+                Log.w("installPackage", "apk exists=${apkFile.exists()} canRead=${apkFile.canRead()} length=${apkFile.length()}")
+
+                uri = Uri.fromFile(apkFile)
+
+                StrictMode.setVmPolicy(
+                    StrictMode.VmPolicy.Builder().build()
+                )
             }
-        } else {
-            val intent = Intent(Intent.ACTION_INSTALL_PACKAGE, uri)
-            intent.putExtra(Intent.EXTRA_INSTALLER_PACKAGE_NAME, packageName)
-            intent.putExtra(Intent.EXTRA_NOT_UNKNOWN_SOURCE, true)
-            intent.putExtra(Intent.EXTRA_RETURN_RESULT, true)
-            intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            startActivityForResult(intent, REQUEST_INSTALL_PACKAGE)
-        }
 
-        // Restore the VmPolicy anyway
-        StrictMode.setVmPolicy(policy)
+            Log.w("installPackage", "final uri=$uri")
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                actionInstallPackageQ(packageName, uri, splitApks)
+            } else {
+                val installIntent = Intent(Intent.ACTION_INSTALL_PACKAGE, uri).apply {
+                    putExtra(Intent.EXTRA_INSTALLER_PACKAGE_NAME, packageName)
+                    putExtra(Intent.EXTRA_NOT_UNKNOWN_SOURCE, true)
+                    putExtra(Intent.EXTRA_RETURN_RESULT, true)
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
+
+                startActivityForResult(installIntent, REQUEST_LEGACY_INSTALL_PACKAGE)
+            }
+        } catch (e: Exception) {
+            Log.w("installPackage", e.stackTraceToString())
+            appInstallFinished(Activity.RESULT_CANCELED)
+        } finally {
+            StrictMode.setVmPolicy(oldPolicy)
+        }
     }
 
     private fun actionFinalizeProvision() {
         if (isProfileOwner) {
             finish()
         } else {
-            viewModel.setProvisionedStatus(true)
             finish()
         }
     }
@@ -227,29 +359,75 @@ class DummyActivity: AppCompatActivity() {
     // as elegant because now we really need to read the entire apk and write to it
     // Keep this case only for Q for now.
     @Throws(IOException::class)
-    private fun actionInstallPackageQ(uri: Uri?, splitApks: Array<String>?) {
+    private fun actionInstallPackageQ(
+        packageName: String?,
+        uri: Uri?,
+        splitApks: Array<String>?
+    ) {
         val pi = packageManager.packageInstaller
+
         val params = PackageInstaller.SessionParams(
             PackageInstaller.SessionParams.MODE_FULL_INSTALL
-        )
-        val sessionId = pi.createSession(params)
+        ).apply {
+            if (!packageName.isNullOrBlank()) {
+                setAppPackageName(packageName)
+            }
 
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                setRequireUserAction(
+                    PackageInstaller.SessionParams.USER_ACTION_NOT_REQUIRED
+                )
+            }
+        }
+
+        val sessionId = pi.createSession(params)
         val session = pi.openSession(sessionId)
+
         doInstallPackageQ(uri, splitApks, session) {
-            // We have finished piping the streams, show the progress as 10%
             session.setStagingProgress(0.1f)
 
-            // Commit the session
-            val intent = Intent(this, DummyActivity::class.java)
-            intent.setAction(PACKAGEINSTALLER_CALLBACK)
-            val pendingIntent = PendingIntent.getActivity(
-                this, 0,
-                intent, PendingIntent.FLAG_MUTABLE
-            )
-            session.commit(pendingIntent.getIntentSender())
+            val callbackIntent = Intent(this, DummyActivity::class.java).apply {
+                action = PACKAGEINSTALLER_CALLBACK
+                flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            }
+
+            val pendingIntentFlags =
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE
+
+            val pendingIntent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                val options = if (Build.VERSION.SDK_INT >= 36) {
+                    ActivityOptions.makeBasic().apply {
+                        setPendingIntentCreatorBackgroundActivityStartMode(
+                            ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOW_ALWAYS
+                        )
+                    }
+                } else {
+                    ActivityOptions.makeBasic().apply {
+                        setPendingIntentCreatorBackgroundActivityStartMode(
+                            ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED
+                        )
+                    }
+                }
+
+                PendingIntent.getActivity(
+                    this,
+                    sessionId,
+                    callbackIntent,
+                    pendingIntentFlags,
+                    options.toBundle()
+                )
+            } else {
+                PendingIntent.getActivity(
+                    this,
+                    sessionId,
+                    callbackIntent,
+                    pendingIntentFlags
+                )
+            }
+
+            session.commit(pendingIntent.intentSender)
         }
     }
-
     // The background part of the installation process on Q (reading APKs etc)
     // that must be executed on another thread
     // Put them in background to avoid stalling the UI thread
@@ -259,8 +437,13 @@ class DummyActivity: AppCompatActivity() {
         session: PackageInstaller.Session,
         callback: Runnable?
     ) {
+        if (baseUri == null) {
+            Log.w("doInstallPackageQ", "baseUri is null")
+            appInstallFinished(Activity.RESULT_CANCELED)
+            return
+        }
         val uris = ArrayList<Uri>()
-        uris.add(baseUri!!)
+        uris.add(baseUri)
         if (!splitApks.isNullOrEmpty()) {
             for (apk in splitApks) {
                 uris.add(Uri.fromFile(File(apk)))
@@ -270,7 +453,12 @@ class DummyActivity: AppCompatActivity() {
         Thread {
             for (uri in uris) {
                 try {
+                    Log.w("doInstallPackageQ", "copy uri=$uri")
+
                     contentResolver.openInputStream(uri).use { `is` ->
+                        if (`is` == null) {
+                            throw IOException("Cannot open input stream for $uri")
+                        }
                         session.openWrite(
                             UUID.randomUUID().toString(),
                             0,
@@ -281,17 +469,39 @@ class DummyActivity: AppCompatActivity() {
                         }
                     }
                 } catch (e: IOException) {
+                    Log.w("doInstallPackageQ", e.stackTraceToString())
                 }
             }
             runOnUiThread(callback)
         }.start()
     }
 
-    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+    override fun onActivityResult(
+        requestCode: Int,
+        resultCode: Int,
+        data: Intent?
+    ) {
         super.onActivityResult(requestCode, resultCode, data)
 
-        if (requestCode == REQUEST_INSTALL_PACKAGE) {
-            appInstallFinished(resultCode)
+        when (requestCode) {
+            REQUEST_CONFIRM_INSTALL -> {
+                Log.w(
+                    "installQueue",
+                    "confirm install result=$resultCode; waiting for PackageInstaller final callback"
+                )
+
+                // ВАЖНО:
+                // Ничего не делаем.
+                // После подтверждения PackageInstaller сам пришлёт STATUS_SUCCESS или STATUS_FAILURE.
+                return
+            }
+
+            REQUEST_LEGACY_INSTALL_PACKAGE -> {
+                Log.w("installQueue", "legacy install result=$resultCode")
+
+                // Только для старого Intent.ACTION_INSTALL_PACKAGE.
+                installNextFromQueue()
+            }
         }
     }
 
@@ -327,7 +537,7 @@ class DummyActivity: AppCompatActivity() {
         // with the result code.
         // If ANY separate logic is added for any of them,
         // the request code should be separated.
-        startActivityForResult(intent, REQUEST_INSTALL_PACKAGE)
+        startActivityForResult(intent, REQUEST_LEGACY_INSTALL_PACKAGE)
     }
 
     private fun actionUninstallPackageQ() {
@@ -366,10 +576,13 @@ class DummyActivity: AppCompatActivity() {
         const val TRY_START_SERVICE: String = "com.libsillycrypt.workprofile.TRY_START_SERVICE"
         const val INSTALL_PACKAGE: String = "com.libsillycrypt.workprofile.INSTALL_PACKAGE"
         const val UNINSTALL_PACKAGE: String = "com.libsillycrypt.workprofile.UNINSTALL_PACKAGE"
+        const val INSTALL_PACKAGES: String = "com.libsillycrypt.workprofile.INSTALL_PACKAGES"
         const val SYNCHRONIZE_PREFERENCE: String =
             "com.libsillycrypt.workprofile.SYNCHRONIZE_PREFERENCE"
         const val PACKAGEINSTALLER_CALLBACK: String =
             "com.libsillycrypt.workprofile.PACKAGEINSTALLER_CALLBACK"
+
+        const val EXTRA_APPS = "appsData"
 
         private var hasRequestedPermission: Boolean = false
 
@@ -377,11 +590,13 @@ class DummyActivity: AppCompatActivity() {
             listOf<String?>(
                 INSTALL_PACKAGE,
                 UNINSTALL_PACKAGE,
+                INSTALL_PACKAGES
             )
 
         private const val REQUEST_PERMISSION_POST_NOTIFICATIONS = 3
 
-        private const val REQUEST_INSTALL_PACKAGE = 1
+        private const val REQUEST_LEGACY_INSTALL_PACKAGE = 1
+        private const val REQUEST_CONFIRM_INSTALL = 2
 
         @Volatile
         private var sLastSameProcessRequest: Long = -1

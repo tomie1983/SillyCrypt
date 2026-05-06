@@ -9,8 +9,11 @@ import com.libsillycrypt.workprofile.domain.entities.WorkProfileSettings
 import com.libsillycrypt.workprofile.domain.repository.WorkProfileRepository
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import javax.inject.Inject
 
@@ -18,11 +21,11 @@ class WorkProfileRepositoryImpl @Inject constructor(
     private val manager: WorkProfileManager,
     private val workProfileUtils: WorkProfileUtils,
     private val dataStore: DataStore<WorkProfileSettings>,
-    private val _isWorkProfileAvailable: MutableSharedFlow<Boolean>,
+    private val _isWorkProfileAvailable: MutableStateFlow<Boolean>,
     @ApplicationContext private val context: Context
 ): WorkProfileRepository {
 
-    override val isWorkProfileAvailable: SharedFlow<Boolean> = _isWorkProfileAvailable.asSharedFlow()
+    override val isWorkProfileAvailable: StateFlow<Boolean> = _isWorkProfileAvailable.asStateFlow()
 
     override val settings = dataStore.data
 

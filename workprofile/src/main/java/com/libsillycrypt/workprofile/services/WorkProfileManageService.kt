@@ -1,6 +1,7 @@
 package com.libsillycrypt.workprofile.services
 
 import android.app.Activity
+import android.app.Activity.RESULT_OK
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -62,6 +63,32 @@ class WorkProfileManageService: Service() {
                     exitProcess(0)
                 }
             }.start()
+        }
+
+        override fun installApps(apps: List<ApplicationInfoWrapper>, callback: IAppInstallCallback) {
+            Log.w("installApps","start")
+
+            val intent = Intent(DummyActivity.INSTALL_PACKAGES).apply {
+                component = ComponentName(
+                    this@WorkProfileManageService,
+                    DummyActivity::class.java
+                )
+
+                putParcelableArrayListExtra(
+                    DummyActivity.EXTRA_APPS,
+                    ArrayList(apps)
+                )
+
+                val callbackExtra = Bundle().apply {
+                    putBinder("callback", callback.asBinder())
+                }
+
+                putExtra("callback", callbackExtra)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+
+            DummyActivity.registerSameProcessRequest(intent)
+            startActivityProxy?.startActivity(intent)
         }
 
         override fun installApp(

@@ -130,6 +130,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun bindWorkServiceCb(result: ActivityResult) {
+        Log.w("installbind",result.toString())
         if (result.resultCode == RESULT_OK && result.data != null) {
             val extra: Bundle? = result.data?.getBundleExtra("extra")
             val binder = extra!!.getBinder("service")
@@ -160,7 +161,10 @@ class MainActivity : ComponentActivity() {
                     this@MainActivity.startActivity(intent)
                 }
             })
+            Log.w("installVm","true")
+            viewModel.tryInstallApps()
         } catch (e: RemoteException) {
+            Log.w("installException",e.stackTraceToString())
             throw RuntimeException(e)
         }
     }
