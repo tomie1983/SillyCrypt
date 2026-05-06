@@ -1,10 +1,7 @@
 package com.dev.sillycrypt
 
-import android.content.ComponentName
 import android.content.Intent
-import android.content.ServiceConnection
 import android.os.Bundle
-import android.os.IBinder
 import android.os.RemoteException
 import android.util.Log
 import androidx.activity.ComponentActivity
@@ -14,9 +11,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.collectAsState
-import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
-import androidx.lifecycle.repeatOnLifecycle
 import com.dev.sillycrypt.presentation.navigation.AppNavHost
 import com.dev.sillycrypt.presentation.viewmodels.MainActivityVM
 import com.libsillycrypt.workprofile.data.utils.ServiceUtils
@@ -24,7 +19,6 @@ import com.libsillycrypt.workprofile.data.utils.WorkProfileUtils
 import com.libsillycrypt.workprofile.presentation.activities.DummyActivity
 import com.libsillycrypt.workprofile.presentation.contracts.ProfileProvisionContract
 import com.libsillycrypt.workprofile.services.IStartActivityProxy
-import com.libsillycrypt.workprofile.services.IWorkProfileManageService
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -36,9 +30,6 @@ class MainActivity : ComponentActivity() {
 
     @Inject
     lateinit var workProfileUtils: WorkProfileUtils
-
-    private var serviceMain: IWorkProfileManageService? = null
-    private var mServiceWork: IWorkProfileManageService? = null
 
     private val mTryStartWorkService = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -60,15 +51,11 @@ class MainActivity : ComponentActivity() {
         observeProfileStatus()
         setContent {
             MaterialTheme {
-                AppNavHost(viewModel.isWorkProfileAvailable.collectAsState(),::finish, ::createProfile, ::deleteProfile)
+                AppNavHost(
+                    viewModel.isWorkProfileAvailable.collectAsState(),
+                    ::finish,
+                    ::createProfile)
             }
-        }
-    }
-
-    fun deleteProfile() {
-        Log.w("deleteProfile", mServiceWork.toString())
-        if (mServiceWork?.deleteWorkProfile() == true) {
-            viewModel.refreshWorkProfileStatus()
         }
     }
 
@@ -76,7 +63,10 @@ class MainActivity : ComponentActivity() {
         lifecycleScope.launch {
             viewModel.isWorkProfileAvailable.collect {
                 if (it) {
-                    bindServices()
+                    // Bind to the service provided by this app in main user
+                    // The service in main profile doesn't need to be foreground
+                    // because this activity will hold a ServiceConnection to the service
+                    serviceUtils.bindMainService(::tryStartWorkService)
                 }
             }
         }
@@ -139,41 +129,25 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun bindServices() {
-        // Bind to the service provided by this app in main user
-        // The service in main profile doesn't need to be foreground
-        // because this activity will hold a ServiceConnection to the service
-        serviceUtils.bindShelterService(object : ServiceConnection {
-            override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
-                serviceMain = IWorkProfileManageService.Stub.asInterface(service)
-                tryStartWorkService()
-            }
-
-            override fun onServiceDisconnected(name: ComponentName?) {
-                // dummy
-            }
-        }, false)
-    }
-
     private fun bindWorkServiceCb(result: ActivityResult) {
         if (result.resultCode == RESULT_OK && result.data != null) {
             val extra: Bundle? = result.data?.getBundleExtra("extra")
             val binder = extra!!.getBinder("service")
-            mServiceWork = IWorkProfileManageService.Stub.asInterface(binder)
+            serviceUtils.bindWorkService(binder)
             registerStartActivityProxies()
         }
     }
 
     private fun registerStartActivityProxies() {
         try {
-            serviceMain?.setStartActivityProxy(object : IStartActivityProxy.Stub() {
+            serviceUtils.mainServiceSetStartActivityProxy(object : IStartActivityProxy.Stub() {
                 @Throws(RemoteException::class)
                 override fun startActivity(intent: Intent?) {
                     this@MainActivity.startActivity(intent)
                 }
             })
 
-            mServiceWork?.setStartActivityProxy(object : IStartActivityProxy.Stub() {
+            serviceUtils.workServiceSetStartActivityProxy(object : IStartActivityProxy.Stub() {
                 @Throws(RemoteException::class)
                 override fun startActivity(intent: Intent) {
                     // Using the full intent may cause the package manager to

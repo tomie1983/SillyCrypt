@@ -1,5 +1,7 @@
 package com.libsillycrypt.workprofile.domain.repository
 
+import com.libsillycrypt.workprofile.domain.entities.WorkProfileSettings
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.SharedFlow
 
 interface WorkProfileRepository {
@@ -18,4 +20,5 @@ interface WorkProfileRepository {
     suspend fun startProfileCreation()
     suspend fun refreshWorkProfileStatus()
     fun deleteProfile(): Boolean
+    val settings: Flow<WorkProfileSettings>
 }

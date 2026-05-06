@@ -16,7 +16,6 @@ import com.libsillycrypt.workprofile.R
 import com.libsillycrypt.workprofile.data.manager.WorkProfileManager
 import com.libsillycrypt.workprofile.data.utils.ServiceUtils
 import com.libsillycrypt.workprofile.domain.entities.ApplicationInfoWrapper
-import com.libsillycrypt.workprofile.domain.repository.WorkProfileRepository
 import com.libsillycrypt.workprofile.presentation.activities.DummyActivity
 import com.libsillycrypt.workprofile.presentation.receivers.SillyCryptDeviceAdminReceiver
 import dagger.hilt.android.AndroidEntryPoint
@@ -57,7 +56,7 @@ class WorkProfileManageService: Service() {
                     Thread.sleep(1)
                 } catch (e: Exception) {
                 }
-                serviceUtils.unbindShelterService()
+                serviceUtils.unbindWorkProfileService()
                 if (kill && !isProfileOwner) {
                     // Just kill the entire process if this signal is received and the process has nothing to do
                     exitProcess(0)

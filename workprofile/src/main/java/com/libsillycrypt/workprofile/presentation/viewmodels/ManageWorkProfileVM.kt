@@ -2,15 +2,16 @@ package com.libsillycrypt.workprofile.presentation.viewmodels
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.libsillycrypt.workprofile.data.utils.ServiceUtils
 import com.libsillycrypt.workprofile.domain.repository.WorkProfileRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.flow.SharingStarted
-import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 @HiltViewModel
 class ManageWorkProfileVM @Inject constructor(
-    private val workProfileRepository: WorkProfileRepository
+    private val workProfileRepository: WorkProfileRepository,
+    private val serviceUtils: ServiceUtils
 ): ViewModel() {
 
     fun isWorkProfileOwner(): Boolean {
@@ -19,5 +20,13 @@ class ManageWorkProfileVM @Inject constructor(
 
     fun deleteProfile() {
         workProfileRepository.deleteProfile()
+    }
+
+    fun deleteProfileFromUser() {
+        viewModelScope.launch {
+            if (serviceUtils.deleteWorkProfile()) {
+                workProfileRepository.refreshWorkProfileStatus()
+            }
+        }
     }
 }

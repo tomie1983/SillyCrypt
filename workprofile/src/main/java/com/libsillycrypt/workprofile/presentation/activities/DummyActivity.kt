@@ -1,7 +1,6 @@
 package com.libsillycrypt.workprofile.presentation.activities
 
 import android.Manifest
-import android.app.ComponentCaller
 import android.app.PendingIntent
 import android.app.admin.DevicePolicyManager
 import android.content.ComponentName
@@ -17,7 +16,6 @@ import android.os.RemoteException
 import android.os.StrictMode
 import android.os.StrictMode.VmPolicy
 import android.util.Log
-import android.widget.Toast
 import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
@@ -338,7 +336,7 @@ class DummyActivity: AppCompatActivity() {
     private fun actionStartService() {
         // This needs to be foreground because this activity won't be able to hold
         // the ServiceConnection to it.
-        serviceUtils.bindShelterService(object : ServiceConnection {
+        serviceUtils.bindService(object : ServiceConnection {
             override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
                 val data = Intent()
                 val bundle = Bundle()

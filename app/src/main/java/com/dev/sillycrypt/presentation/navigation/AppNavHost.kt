@@ -23,7 +23,6 @@ import androidx.navigation.compose.rememberNavController
 import com.dev.sillycrypt.presentation.screens.CreateVolumeScreen
 import com.dev.sillycrypt.presentation.screens.OpenVolumeScreen
 import com.libsillycrypt.workprofile.presentation.screens.WorkProfileSelectionScreen
-import kotlinx.coroutines.flow.StateFlow
 
 private data class BottomItem(
     val destination: AppDestination,
@@ -35,7 +34,6 @@ fun AppNavHost(
     isWorkProfileAvailable: State<Boolean>,
     closeActivity: () -> Unit,
     createProfile: () -> Unit,
-    deleteProfile: () -> Unit
 ) {
     val navController = rememberNavController()
 
@@ -96,7 +94,7 @@ fun AppNavHost(
             composable(AppDestination.ManageWorkProfile.route) {
                 WorkProfileSelectionScreen(
                     isWorkProfileAvailable = isWorkProfileAvailable,
-                    createProfile = createProfile, innerPadding = innerPadding, deleteProfileFromUser = deleteProfile)
+                    createProfile = createProfile, innerPadding = innerPadding)
             }
         }
     }

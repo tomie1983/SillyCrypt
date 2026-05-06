@@ -3,13 +3,11 @@ package com.libsillycrypt.workprofile.data.repository
 import android.content.Context
 import android.util.Log
 import androidx.datastore.core.DataStore
-import com.libsillycrypt.workprofile.domain.repository.WorkProfileRepository
 import com.libsillycrypt.workprofile.data.manager.WorkProfileManager
-import com.libsillycrypt.workprofile.data.utils.AuthenticationUtility
 import com.libsillycrypt.workprofile.data.utils.WorkProfileUtils
 import com.libsillycrypt.workprofile.domain.entities.WorkProfileSettings
+import com.libsillycrypt.workprofile.domain.repository.WorkProfileRepository
 import dagger.hilt.android.qualifiers.ApplicationContext
-import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
@@ -20,14 +18,13 @@ class WorkProfileRepositoryImpl @Inject constructor(
     private val manager: WorkProfileManager,
     private val workProfileUtils: WorkProfileUtils,
     private val dataStore: DataStore<WorkProfileSettings>,
-    private val authenticationUtility: AuthenticationUtility,
     private val _isWorkProfileAvailable: MutableSharedFlow<Boolean>,
     @ApplicationContext private val context: Context
 ): WorkProfileRepository {
 
     override val isWorkProfileAvailable: SharedFlow<Boolean> = _isWorkProfileAvailable.asSharedFlow()
 
-    val settings = dataStore.data
+    override val settings = dataStore.data
 
     override suspend fun loadFromSettings() {
         manager.applySettings(settings.first())
