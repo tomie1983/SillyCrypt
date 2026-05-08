@@ -1,7 +1,6 @@
 package com.libsillycrypt.workprofile.presentation.activities
 
 import android.Manifest
-import android.R.attr.action
 import android.app.Activity
 import android.app.ActivityOptions
 import android.app.PendingIntent
@@ -9,7 +8,6 @@ import android.app.admin.DevicePolicyManager
 import android.content.ComponentName
 import android.content.Intent
 import android.content.ServiceConnection
-import android.content.pm.PackageInfo
 import android.content.pm.PackageInstaller
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -18,9 +16,7 @@ import android.os.Bundle
 import android.os.IBinder
 import android.os.RemoteException
 import android.os.StrictMode
-import android.os.StrictMode.VmPolicy
 import android.util.Log
-import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
@@ -28,7 +24,6 @@ import com.libsillycrypt.workprofile.data.utils.AuthenticationUtility
 import com.libsillycrypt.workprofile.data.utils.ServiceUtils
 import com.libsillycrypt.workprofile.data.utils.WorkProfileUtils
 import com.libsillycrypt.workprofile.domain.entities.ApplicationInfoWrapper
-import com.libsillycrypt.workprofile.presentation.viewmodels.DummyActivityVM
 import com.libsillycrypt.workprofile.services.IAppInstallCallback
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch

@@ -61,4 +61,5 @@ dependencies {
     implementation(libs.immutable.collections)
     implementation(project(":core:serialization"))
     implementation(project(":core:mapper"))
+    implementation(project(":core:common"))
 }

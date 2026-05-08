@@ -43,11 +43,18 @@ class MainActivityVM @Inject constructor(
         }
     }
 
+    fun refreshApps() {
+        viewModelScope.launch {
+            workProfileRepository.refershWorkProfileApps()
+        }
+    }
+
     fun tryInstallApps() {
         viewModelScope.launch {
             Log.w("installCheck",workProfileRepository.settings.first().provisioned.toString())
+            workProfileRepository.refershWorkProfileApps()
             if (!workProfileRepository.settings.first().provisioned) {
-                serviceUtils.installApps(settingsRepository.getAppsToInstall())
+                workProfileRepository.installApps(settingsRepository.getAppsToInstall(), ::refreshApps)
                 workProfileRepository.setProvisionedStatus(true)
             }
         }

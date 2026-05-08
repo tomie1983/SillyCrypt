@@ -1,4 +1,4 @@
-package com.dev.sillycrypt.settings.domain.entities
+package dev.sillycrypt.common.entities
 
 import android.content.pm.ApplicationInfo
 

@@ -10,6 +10,7 @@ import android.app.admin.DevicePolicyManager
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.os.Bundle
 import android.os.IBinder
 import android.util.Log
@@ -89,6 +90,12 @@ class WorkProfileManageService: Service() {
 
             DummyActivity.registerSameProcessRequest(intent)
             startActivityProxy?.startActivity(intent)
+        }
+
+        override fun getAppList(): List<String> {
+            return packageManager.getInstalledApplications(PackageManager.GET_META_DATA).map {
+                it.packageName
+            }
         }
 
         override fun installApp(

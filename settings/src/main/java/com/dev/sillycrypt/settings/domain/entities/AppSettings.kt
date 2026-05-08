@@ -1,5 +1,6 @@
 package com.dev.sillycrypt.settings.domain.entities
 
+import dev.sillycrypt.common.entities.ApplicationInfoWithFlag
 import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.persistentListOf
 

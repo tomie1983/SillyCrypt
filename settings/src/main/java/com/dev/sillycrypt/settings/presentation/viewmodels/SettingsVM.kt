@@ -1,5 +1,6 @@
 package com.dev.sillycrypt.settings.presentation.viewmodels
 
+import android.content.pm.ApplicationInfo
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.dev.sillycrypt.settings.domain.entities.AppSettings
@@ -34,9 +35,9 @@ class SettingsVM @Inject constructor(
         SettingsScreenState.Loading
     )
 
-    fun setPackageToInstall(packageName: String, install: Boolean) {
+    fun setPackageToInstall(app: ApplicationInfo, install: Boolean) {
         viewModelScope.launch {
-            repository.markPackageForInstallation(packageName, install)
+            repository.markPackageForInstallation(app.packageName, install)
         }
     }
 

@@ -11,6 +11,7 @@ interface IWorkProfileManageService {
     boolean deleteWorkProfile();
     void installApp(in ApplicationInfoWrapper app, IAppInstallCallback callback);
     void installApps(in List<ApplicationInfoWrapper> apps, IAppInstallCallback callback);
+    List<String> getAppList();
     void uninstallApp(in ApplicationInfoWrapper app, IAppInstallCallback callback);
     void setStartActivityProxy(in IStartActivityProxy proxy);
 }

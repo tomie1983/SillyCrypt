@@ -4,9 +4,9 @@ import android.content.Context
 import android.content.pm.PackageManager
 import com.dev.sillycrypt.settings.data.entities.AppSettingsData
 import com.dev.sillycrypt.settings.domain.entities.AppSettings
-import com.dev.sillycrypt.settings.domain.entities.ApplicationInfoWithFlag
 import com.sillycrypt.mapper.Mapper
 import dagger.hilt.android.qualifiers.ApplicationContext
+import dev.sillycrypt.common.entities.ApplicationInfoWithFlag
 import kotlinx.collections.immutable.toPersistentList
 import javax.inject.Inject
 

@@ -1,13 +1,13 @@
 package com.libsillycrypt.workprofile.data.utils
 
+import android.app.Activity.RESULT_OK
 import android.app.admin.DevicePolicyManager
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
-import android.content.pm.PackageManager
+import android.content.pm.ApplicationInfo
 import android.os.IBinder
-import android.os.RemoteException
 import android.util.Log
 import com.libsillycrypt.workprofile.domain.entities.ApplicationInfoWrapper
 import com.libsillycrypt.workprofile.services.IAppInstallCallback
@@ -32,7 +32,7 @@ class ServiceUtils @Inject constructor(
         return serviceWork?.deleteWorkProfile() == true
     }
 
-    fun installApps(apps: List<String>) {
+    fun installApps(apps: List<String>, callback: () -> Unit) {
         Log.w("installation",serviceWork.toString())
         val service = serviceWork ?: return
         val packageManager = context.packageManager
@@ -43,22 +43,17 @@ class ServiceUtils @Inject constructor(
         }
         val callback = object : IAppInstallCallback.Stub() {
             override fun callback(result: Int) {
-                Log.w("installCallback",result.toString())
+                Log.w("appsInstall",result.toString())
+                if (result == RESULT_OK) {
+                    callback()
+                }
             }
         }
         service.installApps(appsPackages, callback)
     }
 
-    fun installApp(packageName: String) {
-        val info = context.packageManager.getInstalledApplications(
-            PackageManager.GET_META_DATA
-        ).find { it.packageName == packageName }
-        val callback = object: IAppInstallCallback.Stub() {
-            override fun callback(result: Int) {
-
-            }
-        }
-        serviceWork?.installApp(ApplicationInfoWrapper(info),callback)
+    fun getAppList(): List<String> {
+        return serviceWork?.getAppList() ?: throw RuntimeException("Work service not initialized")
     }
 
     fun bindMainService(tryStartWorkService: () -> Unit) {
@@ -91,6 +86,30 @@ class ServiceUtils @Inject constructor(
         intent.putExtra("foreground", foreground)
         context.bindService(intent, conn, Context.BIND_AUTO_CREATE)
         shelterServiceConnection = conn
+    }
+
+    fun installApp(app: ApplicationInfo, callback: () -> Unit) {
+        val appInstallCallback = object: IAppInstallCallback.Stub() {
+            override fun callback(result: Int) {
+                Log.w("appInstall",result.toString())
+                if (result == RESULT_OK) {
+                    callback()
+                }
+            }
+        }
+        serviceWork?.installApp(ApplicationInfoWrapper(app), appInstallCallback)
+    }
+
+    fun uninstallApp(app: ApplicationInfo, callback: () -> Unit) {
+        val appInstallCallback = object: IAppInstallCallback.Stub() {
+            override fun callback(result: Int) {
+                Log.w("appUninstall",result.toString())
+                if (result == RESULT_OK) {
+                    callback()
+                }
+            }
+        }
+        serviceWork?.uninstallApp(ApplicationInfoWrapper(app),appInstallCallback)
     }
 
     fun unbindWorkProfileService() {

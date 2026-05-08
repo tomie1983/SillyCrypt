@@ -1,6 +1,6 @@
 package com.dev.sillycrypt.settings.presentation.state
 
-import com.dev.sillycrypt.settings.domain.entities.ApplicationInfoWithFlag
+import dev.sillycrypt.common.entities.ApplicationInfoWithFlag
 import kotlinx.collections.immutable.ImmutableList
 
 sealed class SettingsScreenState {
