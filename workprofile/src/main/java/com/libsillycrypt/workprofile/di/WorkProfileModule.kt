@@ -18,10 +18,9 @@ import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
-import dev.sillycrypt.common.entities.ApplicationInfoWithFlag
+import dev.sillycrypt.common.entities.ApplicationInfoWithData
 import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.persistentListOf
-import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import java.io.File
 import javax.inject.Singleton
@@ -58,7 +57,7 @@ abstract class WorkProfileModule {
         @Singleton
         fun provideAppListMapper(
             @ApplicationContext context: Context
-        ): Mapper<List<String>, ImmutableList<ApplicationInfoWithFlag>> =
+        ): Mapper<List<String>, ImmutableList<ApplicationInfoWithData>> =
             AppListMapper(context)
 
         @Provides

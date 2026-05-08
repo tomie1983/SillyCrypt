@@ -14,37 +14,18 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import androidx.core.graphics.drawable.toBitmap
-import dev.sillycrypt.common.entities.ApplicationInfoWithFlag
+import dev.sillycrypt.common.entities.ApplicationInfoWithData
 
 @Composable
 fun AppListItem(
-    appWithFlag: ApplicationInfoWithFlag,
+    appWithFlag: ApplicationInfoWithData,
     onPackageInstallChanged: (applicationInfo: ApplicationInfo, install: Boolean) -> Unit,
-    modifier: Modifier = Modifier.Companion
+    modifier: Modifier = Modifier
 ) {
-    val context = LocalContext.current
-    val packageManager = context.packageManager
-
     val applicationInfo = appWithFlag.applicationInfo
-    val packageName = applicationInfo.packageName
-
-    val appName = remember(applicationInfo) {
-        applicationInfo.loadLabel(packageManager).toString()
-    }
-
-    val appIcon = remember(applicationInfo) {
-        applicationInfo
-            .loadIcon(packageManager)
-            .toBitmap(width = 96, height = 96)
-            .asImageBitmap()
-    }
 
     Surface(
         modifier = modifier.fillMaxWidth(),
@@ -58,8 +39,8 @@ fun AppListItem(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Image(
-                bitmap = appIcon,
-                contentDescription = appName,
+                bitmap = appWithFlag.icon,
+                contentDescription = appWithFlag.title,
                 modifier = Modifier.size(40.dp)
             )
 
@@ -69,12 +50,12 @@ fun AppListItem(
                 modifier = Modifier.weight(1f)
             ) {
                 Text(
-                    text = appName,
+                    text = appWithFlag.title,
                     style = MaterialTheme.typography.bodyLarge
                 )
 
                 Text(
-                    text = packageName,
+                    text = appWithFlag.packageName,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

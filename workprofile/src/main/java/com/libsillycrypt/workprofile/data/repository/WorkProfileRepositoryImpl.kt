@@ -11,10 +11,9 @@ import com.libsillycrypt.workprofile.domain.entities.WorkProfileSettings
 import com.libsillycrypt.workprofile.domain.repository.WorkProfileRepository
 import com.sillycrypt.mapper.Mapper
 import dagger.hilt.android.qualifiers.ApplicationContext
-import dev.sillycrypt.common.entities.ApplicationInfoWithFlag
+import dev.sillycrypt.common.entities.ApplicationInfoWithData
 import kotlinx.collections.immutable.ImmutableList
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -29,13 +28,13 @@ class WorkProfileRepositoryImpl @Inject constructor(
     private val dataStore: DataStore<WorkProfileSettings>,
     private val _isWorkProfileAvailable: MutableStateFlow<Boolean>,
     private val _workProfileApps: MutableStateFlow<List<String>>,
-    private val appListMapper: Mapper<List<String>, ImmutableList<ApplicationInfoWithFlag>>,
+    private val appListMapper: Mapper<List<String>, ImmutableList<ApplicationInfoWithData>>,
     @ApplicationContext private val context: Context
 ): WorkProfileRepository {
 
     override val isWorkProfileAvailable: StateFlow<Boolean> = _isWorkProfileAvailable.asStateFlow()
 
-    override val appsStatus: Flow<ImmutableList<ApplicationInfoWithFlag>> = _workProfileApps.map {
+    override val appsStatus: Flow<ImmutableList<ApplicationInfoWithData>> = _workProfileApps.map {
         appListMapper.map(it)
     }
 

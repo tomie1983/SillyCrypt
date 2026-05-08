@@ -37,7 +37,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.dev.sillycrypt.settings.presentation.state.SettingsScreenState
 import com.dev.sillycrypt.settings.presentation.viewmodels.SettingsVM
-import dev.sillycrypt.common.entities.ApplicationInfoWithFlag
+import dev.sillycrypt.common.entities.ApplicationInfoWithData
 import kotlinx.collections.immutable.ImmutableList
 
 @Composable
@@ -185,7 +185,7 @@ private fun SettingsSectionTitle(
 
 @Composable
 private fun AppsToInstallDialog(
-    apps: ImmutableList<ApplicationInfoWithFlag>,
+    apps: ImmutableList<ApplicationInfoWithData>,
     onDismiss: () -> Unit,
     onPackageInstallChanged: (app: ApplicationInfo, install: Boolean) -> Unit
 ) {
