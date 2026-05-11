@@ -48,6 +48,10 @@ class ExFATFS(
     private val fatChainCache = LruCache<Int, IntArray>(512)
     private val nodeStateRegistry = ConcurrentHashMap<NodeId, NodeState>()
 
+    private val upCaseTableMutex = Mutex()
+
+    @Volatile
+    private var upCaseTableCache: IntArray? = null
     suspend fun isExFat(): Boolean {
         return serviceDataMutex.withLock {
             bootRegionOperator.isExFat(serviceData)
@@ -299,39 +303,17 @@ class ExFATFS(
         return parentState.writeMutex.withLock {
             val data = createDataHandle()
             var allocatedDirectoryCore: NodeCoreMetadata? = null
+
             try {
                 val existing = listDirectoryEntries(parentState, data).firstOrNull { it.name == name }
                 require(existing == null) { "Entry already exists: ${joinPath(parentDisplayPath, name)}" }
 
-                val entrySet = buildEntrySetBytes(name, isDirectory, allocatedDirectoryCore)
-                val placement = findOrCreateDirectoryEntryPlacement(parentState, data, entrySet.size)
+                val entrySetSize = (2 + fileNameEntryCount(name)) * DIR_ENTRY_SIZE
+                val placement = findOrCreateDirectoryEntryPlacement(parentState, data, entrySetSize)
 
                 if (isDirectory) {
                     allocatedDirectoryCore = allocateStandaloneDirectoryCore()
                     zeroNewDirectoryContent(data, allocatedDirectoryCore)
-                }
-
-                val finalEntrySet = buildEntrySetBytes(name, isDirectory, allocatedDirectoryCore)
-                writeDirectoryStreamRange(
-                    data,
-                    parentState.snapshotCore().firstCluster,
-                    parentState.snapshotCore().noFatChain,
-                    placement.offset,
-                    finalEntrySet
-                )
-
-                if (placement.appendAtEnd) {
-                    val after = placement.offset + finalEntrySet.size
-                    val parentSize = parentState.snapshotCore().dataLength
-                    if (after + DIR_ENTRY_SIZE <= parentSize) {
-                        writeDirectoryStreamRange(
-                            data,
-                            parentState.snapshotCore().firstCluster,
-                            parentState.snapshotCore().noFatChain,
-                            after,
-                            ByteArray(DIR_ENTRY_SIZE)
-                        )
-                    }
                 }
 
                 val childCore = if (isDirectory) {
@@ -344,12 +326,44 @@ class ExFATFS(
                         dataLength = 0,
                         validDataLength = 0,
                         readableLength = 0,
-                        streamFlags = 0,
+                        streamFlags = buildStreamFlags(noFatChain = false),
                         noFatChain = false
                     )
                 }
 
+                val finalEntrySet = buildEntrySetBytes(
+                    name = name,
+                    isDirectory = isDirectory,
+                    core = childCore
+                )
+
+                val currentParentCore = parentState.snapshotCore()
+
+                writeDirectoryStreamRange(
+                    data = data,
+                    firstCluster = currentParentCore.firstCluster,
+                    noFatChain = currentParentCore.noFatChain,
+                    position = placement.offset,
+                    bytes = finalEntrySet
+                )
+
+                if (placement.appendAtEnd) {
+                    val after = placement.offset + finalEntrySet.size
+                    val parentSize = parentState.snapshotCore().dataLength
+
+                    if (after + DIR_ENTRY_SIZE <= parentSize) {
+                        writeDirectoryStreamRange(
+                            data = data,
+                            firstCluster = parentState.snapshotCore().firstCluster,
+                            noFatChain = parentState.snapshotCore().noFatChain,
+                            position = after,
+                            bytes = ByteArray(DIR_ENTRY_SIZE)
+                        )
+                    }
+                }
+
                 val nameEntryCount = fileNameEntryCount(name)
+
                 val entrySetLocation = NodeEntrySetLocation(
                     parentDirFirstCluster = parentState.snapshotCore().firstCluster,
                     parentDirNoFatChain = parentState.snapshotCore().noFatChain,
@@ -359,12 +373,20 @@ class ExFATFS(
                         placement.offset + DIR_ENTRY_SIZE.toLong() * (2L + idx)
                     }
                 )
+
                 val nodeId = NodeId.DirectoryEntry(
                     parentDirFirstCluster = parentState.snapshotCore().firstCluster,
                     primaryEntryOffsetInParentBytes = placement.offset
                 )
+
                 val state = internNodeState(nodeId, childCore, entrySetLocation)
-                ExFATFile(this, state, name, joinPath(parentDisplayPath, name))
+
+                ExFATFile(
+                    fileSystem = this,
+                    state = state,
+                    displayName = name,
+                    displayPath = joinPath(parentDisplayPath, name)
+                )
             } catch (t: Throwable) {
                 allocatedDirectoryCore?.let {
                     runCatching { freeStandaloneNode(it) }
@@ -484,33 +506,39 @@ class ExFATFS(
         val fsMeta = readConstantFileSystemMetadata()
         val bitmapInfo = readAllocationBitmapInfo()
         val fatStartBytes = buildFatStartBytes(fsMeta)
+
         return withAllocationLock {
             serviceDataMutex.withLock {
                 bootRegionOperator.setDirty(true)
-                val planned = allocateForEmptyFile(
-                    current = NodeCoreMetadata(
-                        isDirectory = true,
-                        attributes = ATTR_DIRECTORY,
-                        firstCluster = 0,
-                        dataLength = 0,
-                        validDataLength = 0,
-                        readableLength = 0,
-                        streamFlags = 0,
-                        noFatChain = false
-                    ),
-                    requiredClusters = 1,
-                    fsMeta = fsMeta,
-                    bitmapInfo = bitmapInfo,
-                    fatStartBytes = fatStartBytes
-                ).copy(
-                    dataLength = fsMeta.bytesPerCluster,
-                    validDataLength = fsMeta.bytesPerCluster,
-                    readableLength = fsMeta.bytesPerCluster,
-                    attributes = ATTR_DIRECTORY
-                )
-                updatePercentInUse(serviceData, bitmapInfo, fsMeta)
-                bootRegionOperator.setDirty(false)
-                planned
+
+                try {
+                    val planned = allocateForEmptyFile(
+                        current = NodeCoreMetadata(
+                            isDirectory = true,
+                            attributes = ATTR_DIRECTORY,
+                            firstCluster = 0,
+                            dataLength = 0,
+                            validDataLength = 0,
+                            readableLength = 0,
+                            streamFlags = buildStreamFlags(noFatChain = false),
+                            noFatChain = false
+                        ),
+                        requiredClusters = 1,
+                        fsMeta = fsMeta,
+                        bitmapInfo = bitmapInfo,
+                        fatStartBytes = fatStartBytes
+                    ).copy(
+                        dataLength = fsMeta.bytesPerCluster,
+                        validDataLength = fsMeta.bytesPerCluster,
+                        readableLength = fsMeta.bytesPerCluster,
+                        attributes = ATTR_DIRECTORY
+                    )
+
+                    updatePercentInUse(serviceData, bitmapInfo, fsMeta)
+                    planned
+                } finally {
+                    bootRegionOperator.setDirty(false)
+                }
             }
         }
     }
@@ -544,13 +572,14 @@ class ExFATFS(
         }
     }
 
-    private fun buildEntrySetBytes(
+    private suspend fun buildEntrySetBytes(
         name: String,
         isDirectory: Boolean,
-        allocatedDirectoryCore: NodeCoreMetadata?
+        core: NodeCoreMetadata
     ): ByteArray {
         val nameEntries = buildFileNameEntries(name)
         val secondaryCount = 1 + nameEntries.size
+
         val primary = ByteArray(DIR_ENTRY_SIZE)
         primary[0] = (0x80 or TYPE_FILE_DIR_ENTRY).toByte()
         primary[1] = secondaryCount.toByte()
@@ -558,22 +587,22 @@ class ExFATFS(
 
         val stream = ByteArray(DIR_ENTRY_SIZE)
         stream[0] = (0x80 or TYPE_STREAM_EXT).toByte()
-        val streamFlags = allocatedDirectoryCore?.let { updatedStreamFlags(it.streamFlags, it.noFatChain) } ?: 0
-        stream[1] = streamFlags.toByte()
+        stream[1] = buildStreamFlags(core.noFatChain).toByte()
         stream[3] = name.length.toByte()
-        val firstCluster = allocatedDirectoryCore?.firstCluster?.toInt() ?: 0
-        val dataLength = allocatedDirectoryCore?.dataLength ?: 0L
-        val validDataLength = allocatedDirectoryCore?.validDataLength ?: 0L
-        putU64le(stream, 8, validDataLength)
-        putU32le(stream, 20, firstCluster)
-        putU64le(stream, 24, dataLength)
+
+        putU16le(stream, 4, computeNameHash(name))
+        putU64le(stream, 8, core.validDataLength)
+        putU32le(stream, 20, core.firstCluster.toInt())
+        putU64le(stream, 24, core.dataLength)
 
         val parts = ArrayList<ByteArray>(2 + nameEntries.size)
         parts += primary
         parts += stream
         parts.addAll(nameEntries)
+
         val checksum = computeEntrySetChecksum(parts)
         putU16le(primary, 2, checksum)
+
         return concatChunks(parts, parts.sumOf { it.size })
     }
 
@@ -590,6 +619,134 @@ class ExFATFS(
             offset += FILE_NAME_CHARS_PER_ENTRY
         }
         return result
+    }
+
+    private fun computeEntrySetChecksum(entrySet: ByteArray): Int {
+        var sum = 0
+
+        for (i in entrySet.indices) {
+            if (i == 2 || i == 3) continue
+
+            val value = entrySet[i].toInt() and 0xFF
+            sum = (((sum ushr 1) or ((sum and 1) shl 15)) + value) and 0xFFFF
+        }
+
+        return sum
+    }
+
+    private suspend fun computeNameHash(name: String): Int {
+        val upCaseTable = readUpCaseTable()
+
+        var hash = 0
+
+        for (ch in name) {
+            val upper = upCaseTable[ch.code]
+
+            val low = upper and 0xFF
+            val high = (upper ushr 8) and 0xFF
+
+            hash = rotateNameHash(hash, low)
+            hash = rotateNameHash(hash, high)
+        }
+
+        return hash
+    }
+
+    private suspend fun readUpCaseTable(): IntArray {
+        upCaseTableCache?.let { return it }
+
+        return upCaseTableMutex.withLock {
+            upCaseTableCache?.let { return@withLock it }
+
+            val info = readUpCaseTableInfo()
+            val data = createDataHandle()
+
+            try {
+                val core = NodeCoreMetadata(
+                    isDirectory = false,
+                    attributes = 0,
+                    firstCluster = info.firstCluster.toLong(),
+                    dataLength = info.dataLength,
+                    validDataLength = info.dataLength,
+                    readableLength = info.dataLength,
+                    streamFlags = 0,
+                    noFatChain = false
+                )
+
+                val bytes = readAllReadableBytes(core, data)
+                val table = decodeUpCaseTable(bytes)
+                upCaseTableCache = table
+                table
+            } finally {
+                data.close()
+            }
+        }
+    }
+
+    private suspend fun readUpCaseTableInfo(): UpCaseTableInfo {
+        val rootState = getRootState()
+        val data = createDataHandle()
+
+        try {
+            val rootBytes = readAllReadableBytes(rootState.snapshotCore(), data)
+
+            var i = 0
+            while (i + DIR_ENTRY_SIZE <= rootBytes.size) {
+                val raw = u8(rootBytes[i])
+                if (raw == 0x00) break
+
+                val inUse = (raw and 0x80) != 0
+                val type = raw and 0x7F
+
+                if (inUse && type == TYPE_UPCASE_TABLE) {
+                    val checksum = u32le(rootBytes, i + 4).toLong() and 0xFFFF_FFFFL
+                    val firstCluster = u32le(rootBytes, i + 20)
+                    val dataLength = u64le(rootBytes, i + 24)
+
+                    return UpCaseTableInfo(
+                        checksum = checksum,
+                        firstCluster = firstCluster,
+                        dataLength = dataLength
+                    )
+                }
+
+                i += DIR_ENTRY_SIZE
+            }
+
+            error("UpCase Table entry not found in root directory")
+        } finally {
+            data.close()
+        }
+    }
+
+    private fun decodeUpCaseTable(bytes: ByteArray): IntArray {
+        val result = IntArray(UTF16_CODE_UNIT_COUNT) { it }
+
+        var tableIndex = 0
+        var offset = 0
+
+        while (offset + 1 < bytes.size && tableIndex < UTF16_CODE_UNIT_COUNT) {
+            val value = u16le(bytes, offset)
+            offset += 2
+
+            if (value == 0xFFFF) {
+                require(offset + 1 < bytes.size) { "Broken compressed UpCase Table" }
+
+                val identityRunLength = u16le(bytes, offset)
+                offset += 2
+
+                tableIndex += identityRunLength
+            } else {
+                result[tableIndex] = value
+                tableIndex++
+            }
+        }
+
+        return result
+    }
+
+    private fun rotateNameHash(hash: Int, value: Int): Int {
+        return (((hash and 1) shl 15) + (hash ushr 1) + value) and 0xFFFF
     }
 
     private fun computeEntrySetChecksum(entries: List<ByteArray>): Int {
@@ -612,8 +769,10 @@ class ExFATFS(
         require(name.isNotEmpty()) { "Entry name must not be empty" }
         require(name != "." && name != "..") { "Special names are not supported: $name" }
         require('/' !in name) { "Entry name must not contain '/': $name" }
-        require(' ' !in name) { "Entry name must not contain NUL" }
-        require(name.length <= MAX_FILE_NAME_CHARS) { "Entry name is too long: ${name.length} > $MAX_FILE_NAME_CHARS" }
+        require('\u0000' !in name) { "Entry name must not contain NUL" }
+        require(name.length <= MAX_FILE_NAME_CHARS) {
+            "Entry name is too long: ${name.length} > $MAX_FILE_NAME_CHARS"
+        }
     }
 
     internal suspend fun listDirectory(
@@ -857,6 +1016,14 @@ class ExFATFS(
                 val secondariesStart = i + DIR_ENTRY_SIZE
                 val secondariesEnd = secondariesStart + secondaryCount * DIR_ENTRY_SIZE
                 if (secondariesEnd <= dirBytes.size) {
+                    val entrySet = dirBytes.copyOfRange(i, secondariesEnd)
+                    val storedChecksum = u16le(entrySet, 2)
+                    val actualChecksum = computeEntrySetChecksum(entrySet)
+
+                    if (storedChecksum != actualChecksum) {
+                        i += DIR_ENTRY_SIZE * (1 + secondaryCount)
+                        continue
+                    }
                     val secondaryInfo = parseSecondariesForFile(dirBytes, secondariesStart, secondaryCount)
                     val stream = secondaryInfo.stream
                     val name = secondaryInfo.name
@@ -946,6 +1113,10 @@ class ExFATFS(
             when (et) {
                 TYPE_STREAM_EXT -> {
                     val flags = u8(bytes[offset + 1])
+                    if ((flags and STREAM_FLAG_ALLOCATION_POSSIBLE) == 0) {
+                        offset += DIR_ENTRY_SIZE
+                        continue
+                    }
                     val nameLength = u8(bytes[offset + 3])
                     val validDataLength = u64le(bytes, offset + 8)
                     val firstCluster = u32le(bytes, offset + 20).toLong()
@@ -1263,7 +1434,7 @@ class ExFATFS(
                         dataLength = 0,
                         validDataLength = 0,
                         readableLength = 0,
-                        streamFlags = current.streamFlags and STREAM_FLAG_NO_FAT_CHAIN.inv(),
+                        streamFlags = buildStreamFlags(noFatChain = false),
                         noFatChain = false
                     )
                     updateStreamEntryOnDisk(serviceData, state, cleared)
@@ -1334,22 +1505,48 @@ class ExFATFS(
         fatStartBytes: LongArray
     ): NodeCoreMetadata {
         require(requiredClusters > 0)
-        val run = bitmapOperator.findContiguousFreeRun(serviceData, bitmapInfo.startByte, fsMeta.clusterCount, requiredClusters)
+
+        val run = bitmapOperator.findContiguousFreeRun(
+            data = serviceData,
+            bitmapStartByte = bitmapInfo.startByte,
+            clusterCount = fsMeta.clusterCount,
+            requiredLength = requiredClusters
+        )
+
         return if (run != null) {
-            bitmapOperator.markAllocatedRange(bitmapInfo.startByte, run.firstCluster, requiredClusters, fsMeta.clusterCount)
+            bitmapOperator.markAllocatedRange(
+                bitmapStartByte = bitmapInfo.startByte,
+                firstCluster = run.firstCluster,
+                count = requiredClusters,
+                clusterCount = fsMeta.clusterCount
+            )
+
             current.copy(
                 firstCluster = run.firstCluster.toLong(),
-                streamFlags = current.streamFlags or STREAM_FLAG_NO_FAT_CHAIN,
+                streamFlags = buildStreamFlags(noFatChain = true),
                 noFatChain = true
             )
         } else {
-            val clusters = bitmapOperator.findFreeClusters(serviceData, bitmapInfo.startByte, fsMeta.clusterCount, requiredClusters)
+            val clusters = bitmapOperator.findFreeClusters(
+                data = serviceData,
+                bitmapStartByte = bitmapInfo.startByte,
+                clusterCount = fsMeta.clusterCount,
+                requiredCount = requiredClusters
+            )
+
             require(clusters.size == requiredClusters) { "No space left on device" }
-            bitmapOperator.markAllocatedClusters(bitmapInfo.startByte, clusters, fsMeta.clusterCount)
+
+            bitmapOperator.markAllocatedClusters(
+                bitmapStartByte = bitmapInfo.startByte,
+                clusters = clusters,
+                clusterCount = fsMeta.clusterCount
+            )
+
             fatOperator.writeChain(clusters, fatStartBytes)
+
             current.copy(
                 firstCluster = clusters.first().toLong(),
-                streamFlags = current.streamFlags and STREAM_FLAG_NO_FAT_CHAIN.inv(),
+                streamFlags = buildStreamFlags(noFatChain = false),
                 noFatChain = false
             )
         }
@@ -1365,7 +1562,9 @@ class ExFATFS(
     ): NodeCoreMetadata {
         val extensionStart = current.firstCluster.toInt() + oldClusters
         val maxCluster = CLUSTERS_OFFSET + fsMeta.clusterCount - 1
+
         var canExtendContiguously = extensionStart + additional - 1 <= maxCluster
+
         if (canExtendContiguously) {
             for (c in extensionStart until extensionStart + additional) {
                 if (bitmapOperator.isAllocated(serviceData, bitmapInfo.startByte, c, fsMeta.clusterCount)) {
@@ -1374,19 +1573,45 @@ class ExFATFS(
                 }
             }
         }
+
         if (canExtendContiguously) {
-            bitmapOperator.markAllocatedRange(bitmapInfo.startByte, extensionStart, additional, fsMeta.clusterCount)
-            return current
+            bitmapOperator.markAllocatedRange(
+                bitmapStartByte = bitmapInfo.startByte,
+                firstCluster = extensionStart,
+                count = additional,
+                clusterCount = fsMeta.clusterCount
+            )
+
+            return current.copy(
+                streamFlags = buildStreamFlags(noFatChain = true),
+                noFatChain = true
+            )
         }
 
-        val newClusters = bitmapOperator.findFreeClusters(serviceData, bitmapInfo.startByte, fsMeta.clusterCount, additional)
+        val newClusters = bitmapOperator.findFreeClusters(
+            data = serviceData,
+            bitmapStartByte = bitmapInfo.startByte,
+            clusterCount = fsMeta.clusterCount,
+            requiredCount = additional
+        )
+
         require(newClusters.size == additional) { "No space left on device" }
-        bitmapOperator.markAllocatedClusters(bitmapInfo.startByte, newClusters, fsMeta.clusterCount)
+
+        bitmapOperator.markAllocatedClusters(
+            bitmapStartByte = bitmapInfo.startByte,
+            clusters = newClusters,
+            clusterCount = fsMeta.clusterCount
+        )
+
         val oldContiguous = fatOperator.buildContiguousClusters(current.firstCluster.toInt(), oldClusters)
         fatOperator.writeChain(oldContiguous + newClusters, fatStartBytes)
-        fatChainCacheMutex.withLock { fatChainCache.remove(current.firstCluster.toInt()) }
+
+        fatChainCacheMutex.withLock {
+            fatChainCache.remove(current.firstCluster.toInt())
+        }
+
         return current.copy(
-            streamFlags = current.streamFlags and STREAM_FLAG_NO_FAT_CHAIN.inv(),
+            streamFlags = buildStreamFlags(noFatChain = false),
             noFatChain = false
         )
     }
@@ -1398,14 +1623,40 @@ class ExFATFS(
         bitmapInfo: AllocationBitmapInfo,
         fatStartBytes: LongArray
     ): NodeCoreMetadata {
-        val newClusters = bitmapOperator.findFreeClusters(serviceData, bitmapInfo.startByte, fsMeta.clusterCount, additional)
+        val newClusters = bitmapOperator.findFreeClusters(
+            data = serviceData,
+            bitmapStartByte = bitmapInfo.startByte,
+            clusterCount = fsMeta.clusterCount,
+            requiredCount = additional
+        )
+
         require(newClusters.size == additional) { "No space left on device" }
-        bitmapOperator.markAllocatedClusters(bitmapInfo.startByte, newClusters, fsMeta.clusterCount)
-        val oldChain = fatOperator.walkChain(serviceData, current.firstCluster.toInt(), fatStartBytes[0], DEFAULT_WALK_LIMIT)
+
+        bitmapOperator.markAllocatedClusters(
+            bitmapStartByte = bitmapInfo.startByte,
+            clusters = newClusters,
+            clusterCount = fsMeta.clusterCount
+        )
+
+        val oldChain = fatOperator.walkChain(
+            data = serviceData,
+            firstCluster = current.firstCluster.toInt(),
+            fatStartByte = fatStartBytes[0],
+            maxSteps = DEFAULT_WALK_LIMIT
+        )
+
         require(oldChain.isNotEmpty()) { "Broken FAT chain" }
+
         fatOperator.appendChain(oldChain.last(), newClusters, fatStartBytes)
-        fatChainCacheMutex.withLock { fatChainCache.remove(current.firstCluster.toInt()) }
-        return current
+
+        fatChainCacheMutex.withLock {
+            fatChainCache.remove(current.firstCluster.toInt())
+        }
+
+        return current.copy(
+            streamFlags = buildStreamFlags(noFatChain = false),
+            noFatChain = false
+        )
     }
 
     private suspend fun updateFileMetadata(state: NodeState, nextCore: NodeCoreMetadata) {
@@ -1427,25 +1678,81 @@ class ExFATFS(
     ) {
         val location = state.snapshotEntrySetLocation()
             ?: throw IllegalStateException("Root has no stream entry")
+
         val streamOffset = location.streamEntryOffsetInParentBytes
             ?: throw IllegalStateException("Node has no stream entry")
+
         val streamBytes = readDirectoryStreamRange(
-            data,
-            location.parentDirFirstCluster,
-            location.parentDirNoFatChain,
-            streamOffset,
-            DIR_ENTRY_SIZE
+            data = data,
+            firstCluster = location.parentDirFirstCluster,
+            noFatChain = location.parentDirNoFatChain,
+            position = streamOffset,
+            length = DIR_ENTRY_SIZE
         )
-        streamBytes[1] = (updatedStreamFlags(nextCore.streamFlags, nextCore.noFatChain) and 0xFF).toByte()
+
+        streamBytes[1] = updatedStreamFlags(
+            oldFlags = nextCore.streamFlags,
+            noFatChain = nextCore.noFatChain
+        ).toByte()
+
         putU64le(streamBytes, 8, nextCore.validDataLength)
         putU32le(streamBytes, 20, nextCore.firstCluster.toInt())
         putU64le(streamBytes, 24, nextCore.dataLength)
+
         writeDirectoryStreamRange(
-            data,
-            location.parentDirFirstCluster,
-            location.parentDirNoFatChain,
-            streamOffset,
-            streamBytes
+            data = data,
+            firstCluster = location.parentDirFirstCluster,
+            noFatChain = location.parentDirNoFatChain,
+            position = streamOffset,
+            bytes = streamBytes
+        )
+
+        recomputeAndWriteEntrySetChecksum(
+            data = data,
+            location = location
+        )
+    }
+
+    private suspend fun recomputeAndWriteEntrySetChecksum(
+        data: RandomAccessData,
+        location: NodeEntrySetLocation
+    ) {
+        val primary = readDirectoryStreamRange(
+            data = data,
+            firstCluster = location.parentDirFirstCluster,
+            noFatChain = location.parentDirNoFatChain,
+            position = location.primaryEntryOffsetInParentBytes,
+            length = DIR_ENTRY_SIZE
+        )
+
+        val secondaryCount = u8(primary[1])
+        val totalEntries = 1 + secondaryCount
+        val entrySetBytes = ByteArray(totalEntries * DIR_ENTRY_SIZE)
+
+        System.arraycopy(primary, 0, entrySetBytes, 0, DIR_ENTRY_SIZE)
+
+        for (i in 1 until totalEntries) {
+            val offset = location.primaryEntryOffsetInParentBytes + DIR_ENTRY_SIZE.toLong() * i
+            val entry = readDirectoryStreamRange(
+                data = data,
+                firstCluster = location.parentDirFirstCluster,
+                noFatChain = location.parentDirNoFatChain,
+                position = offset,
+                length = DIR_ENTRY_SIZE
+            )
+            System.arraycopy(entry, 0, entrySetBytes, i * DIR_ENTRY_SIZE, DIR_ENTRY_SIZE)
+        }
+
+        val checksum = computeEntrySetChecksum(entrySetBytes)
+
+        putU16le(primary, 2, checksum)
+
+        writeDirectoryStreamRange(
+            data = data,
+            firstCluster = location.parentDirFirstCluster,
+            noFatChain = location.parentDirNoFatChain,
+            position = location.primaryEntryOffsetInParentBytes,
+            bytes = primary
         )
     }
 
@@ -1538,7 +1845,12 @@ class ExFATFS(
     }
 
     private fun updatedStreamFlags(oldFlags: Int, noFatChain: Boolean): Int {
-        return if (noFatChain) oldFlags or STREAM_FLAG_NO_FAT_CHAIN else oldFlags and STREAM_FLAG_NO_FAT_CHAIN.inv()
+        return buildStreamFlags(noFatChain)
+    }
+
+    private fun buildStreamFlags(noFatChain: Boolean): Int {
+        return STREAM_FLAG_ALLOCATION_POSSIBLE or
+                if (noFatChain) STREAM_FLAG_NO_FAT_CHAIN else 0
     }
 
     private suspend fun resolveFatChain(
@@ -1564,6 +1876,12 @@ class ExFATFS(
         return chain
     }
 
+    private data class UpCaseTableInfo(
+        val checksum: Long,
+        val firstCluster: Int,
+        val dataLength: Long
+    )
+
     companion object {
         const val MB = 1024 * 1024L
 
@@ -1582,6 +1900,11 @@ class ExFATFS(
         private const val MAX_ROOT_DIR_BYTES_SAFETY = 256L * 1024L * 1024L
         private const val ZERO_CHUNK_SIZE = 64 * 1024
         private const val MAX_FILE_NAME_CHARS = 255
+        private const val TYPE_UPCASE_TABLE = 0x02
+
+        private const val STREAM_FLAG_ALLOCATION_POSSIBLE = 0x01
+
+        private const val UTF16_CODE_UNIT_COUNT = 0x10000
 
         private fun clustersForSize(size: Long, bytesPerCluster: Long): Int {
             if (size <= 0L) return 0

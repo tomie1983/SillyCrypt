@@ -40,10 +40,10 @@ class ExFATCreator(private val dataFactory: RandomAccessDataFactory) {
 
             val c = metadata.constantMetadata
             val layout = computeSystemLayout(c)
-
             val upCaseInfo = UpCaseTableCreator(data).createDefaultTable(
                 meta = c,
                 firstCluster = layout.upcaseFirstCluster,
+                reservedClusterCount = layout.upcaseClusterCount
             )
 
             require(upCaseInfo.firstCluster == layout.upcaseFirstCluster)

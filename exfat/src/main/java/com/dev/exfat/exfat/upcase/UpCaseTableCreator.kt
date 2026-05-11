@@ -14,15 +14,31 @@ internal class UpCaseTableCreator(private val data: RandomAccessData) {
     suspend fun createDefaultTable(
         meta: ExFatFIleSystemConstantMetadata,
         firstCluster: Int,
+        reservedClusterCount: Int? = null
     ): UpCaseTableInfo = mutex.withLock {
-        require(firstCluster >= CLUSTERS_OFFSET) { "Invalid upcase first cluster: $firstCluster" }
+        require(firstCluster >= CLUSTERS_OFFSET) {
+            "Invalid upcase first cluster: $firstCluster"
+        }
 
-        val raw = buildRawUpcaseTable()
-        val clusterCount = ceilDiv(raw.size.toLong(), meta.bytesPerCluster).toInt().coerceAtLeast(1)
+        val raw = buildCompressedUpcaseTable()
+
+        val actualClusterCount = ceilDiv(
+            raw.size.toLong(),
+            meta.bytesPerCluster
+        ).toInt().coerceAtLeast(1)
+
+        val clusterCount = reservedClusterCount ?: actualClusterCount
+
+        require(clusterCount >= actualClusterCount) {
+            "Reserved UpCase Table area is too small: reserved=$clusterCount actual=$actualClusterCount"
+        }
+
         val padded = ByteArray((clusterCount.toLong() * meta.bytesPerCluster).toInt())
         System.arraycopy(raw, 0, padded, 0, raw.size)
 
-        val startByte = meta.heapStartByte + (firstCluster.toLong() - CLUSTERS_OFFSET) * meta.bytesPerCluster
+        val startByte = meta.heapStartByte +
+                (firstCluster.toLong() - CLUSTERS_OFFSET) * meta.bytesPerCluster
+
         writeAt(data, startByte, padded)
 
         UpCaseTableInfo(
@@ -33,24 +49,63 @@ internal class UpCaseTableCreator(private val data: RandomAccessData) {
         )
     }
 
-    private fun buildRawUpcaseTable(): ByteArray {
-        val out = ByteArray(UNICODE_CODEPOINT_COUNT * 2)
-        var off = 0
-        for (codeUnit in 0 until UNICODE_CODEPOINT_COUNT) {
-            val upper = codeUnit.toChar().uppercaseChar().code
-            out[off] = (upper and 0xFF).toByte()
-            out[off + 1] = ((upper ushr 8) and 0xFF).toByte()
-            off += 2
+    private fun buildCompressedUpcaseTable(): ByteArray {
+        val words = ArrayList<Int>()
+
+        var codeUnit = 0
+
+        while (codeUnit < UNICODE_CODE_UNIT_COUNT) {
+            val upper = uppercaseCodeUnit(codeUnit)
+
+            if (upper == codeUnit) {
+                var runLength = 1
+
+                while (
+                    codeUnit + runLength < UNICODE_CODE_UNIT_COUNT &&
+                    runLength < 0xFFFF &&
+                    uppercaseCodeUnit(codeUnit + runLength) == codeUnit + runLength
+                ) {
+                    runLength++
+                }
+
+                words += COMPRESSED_IDENTITY_RUN_MARKER
+                words += runLength
+
+                codeUnit += runLength
+            } else {
+                require(upper != COMPRESSED_IDENTITY_RUN_MARKER) {
+                    "Uppercase mapping produced reserved marker 0xFFFF for codeUnit=$codeUnit"
+                }
+
+                words += upper
+                codeUnit++
+            }
         }
+
+        val out = ByteArray(words.size * 2)
+        var offset = 0
+
+        for (word in words) {
+            out[offset] = (word and 0xFF).toByte()
+            out[offset + 1] = ((word ushr 8) and 0xFF).toByte()
+            offset += 2
+        }
+
         return out
+    }
+
+    private fun uppercaseCodeUnit(codeUnit: Int): Int {
+        return codeUnit.toChar().uppercaseChar().code
     }
 
     private fun computeChecksum(bytes: ByteArray): Int {
         var sum = 0
+
         for (b in bytes) {
             sum = (sum ushr 1) or (sum shl 31)
-            sum += (b.toInt() and 0xFF)
+            sum += b.toInt() and 0xFF
         }
+
         return sum
     }
 
@@ -63,6 +118,7 @@ internal class UpCaseTableCreator(private val data: RandomAccessData) {
 
     companion object {
         private const val CLUSTERS_OFFSET = 2
-        private const val UNICODE_CODEPOINT_COUNT = 65536
+        private const val UNICODE_CODE_UNIT_COUNT = 65536
+        private const val COMPRESSED_IDENTITY_RUN_MARKER = 0xFFFF
     }
 }

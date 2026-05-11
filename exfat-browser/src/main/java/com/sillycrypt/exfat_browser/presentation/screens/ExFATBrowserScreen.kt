@@ -110,7 +110,10 @@ fun ExFatBrowserScreen(
         onCopyFile(uri, name)
     }
 
-    Column(modifier.fillMaxSize().padding(innerPadding)) {
+    Box(
+        modifier.fillMaxSize().padding(innerPadding),
+        contentAlignment = Alignment.BottomEnd
+    ) {
         when (state) {
             ExFATBrowserState.Loading -> {
                 Box(
@@ -125,7 +128,7 @@ fun ExFatBrowserScreen(
             is ExFATBrowserState.Data -> {
                 ExFatBrowserContent(
                     modifier = Modifier
-                        .weight(1f),
+                        .fillMaxSize(),
                     state = state,
                     onDirectoryClick = onDirectoryClick,
                     onFileClick = { file ->
@@ -282,6 +285,7 @@ private fun ExFatBrowserFabMenu(
     )
 
     Column(
+        modifier = Modifier.padding(16.dp),
         horizontalAlignment = Alignment.End,
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
