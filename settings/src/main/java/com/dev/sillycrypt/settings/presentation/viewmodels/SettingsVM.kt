@@ -7,11 +7,9 @@ import com.dev.sillycrypt.settings.domain.entities.AppSettings
 import com.dev.sillycrypt.settings.domain.repository.SettingsRepository
 import com.dev.sillycrypt.settings.presentation.state.SettingsScreenState
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -20,6 +18,13 @@ import javax.inject.Inject
 class SettingsVM @Inject constructor(
     private val repository: SettingsRepository,
 ): ViewModel() {
+
+    init {
+        viewModelScope.launch {
+            repository.refreshVisibility()
+        }
+    }
+
     private val showDialog: MutableStateFlow<Boolean> = MutableStateFlow(false)
 
     val settings = combine(showDialog,repository.settings) {
@@ -27,6 +32,7 @@ class SettingsVM @Inject constructor(
         SettingsScreenState.Settings(
             settings.packagesToInstall,
             settings.timeoutMillis,
+            settings.isAppVisible,
             showDialog
         )
     }.stateIn(
@@ -34,6 +40,12 @@ class SettingsVM @Inject constructor(
         SharingStarted.WhileSubscribed(5000),
         SettingsScreenState.Loading
     )
+
+    fun hideApp(visible: Boolean) {
+        viewModelScope.launch {
+            repository.setLauncherIconVisible(!visible)
+        }
+    }
 
     fun setPackageToInstall(app: ApplicationInfo, install: Boolean) {
         viewModelScope.launch {

@@ -6,6 +6,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.core.graphics.drawable.toBitmap
 import com.dev.sillycrypt.settings.data.entities.AppSettingsData
 import com.dev.sillycrypt.settings.domain.entities.AppSettings
+import com.dev.sillycrypt.settings.domain.entities.PackagesAndTimeoutSettings
 import com.sillycrypt.mapper.Mapper
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dev.sillycrypt.common.entities.ApplicationInfoWithData
@@ -14,8 +15,8 @@ import javax.inject.Inject
 
 class AppSettingsMapper @Inject constructor(
     @ApplicationContext private val context: Context
-): Mapper<AppSettingsData, AppSettings> {
-    override fun map(data: AppSettingsData): AppSettings {
+): Mapper<AppSettingsData, PackagesAndTimeoutSettings> {
+    override fun map(data: AppSettingsData): PackagesAndTimeoutSettings {
         val toInstallSet = data.packagesToInstall.toSet()
         val packagesList = context.packageManager.getInstalledApplications(
             PackageManager.GET_META_DATA).map {
@@ -24,6 +25,6 @@ class AppSettingsMapper @Inject constructor(
                 .asImageBitmap()
             ApplicationInfoWithData(it, title, it.packageName, icon, it.packageName in toInstallSet)
         }.sortedBy { it.title }
-        return AppSettings(timeoutMillis = data.timeoutMillis, packagesToInstall = packagesList.toPersistentList())
+        return PackagesAndTimeoutSettings(timeoutMillis = data.timeoutMillis, packagesToInstall = packagesList.toPersistentList())
     }
 }

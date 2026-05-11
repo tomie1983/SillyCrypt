@@ -8,6 +8,7 @@ sealed class SettingsScreenState {
     data class Settings(
         val packages: ImmutableList<ApplicationInfoWithData>,
         val timeout: Long,
+        val appIsVisible: Boolean,
         val showDialog: Boolean
     ): SettingsScreenState()
 }

@@ -16,15 +16,19 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.navigation
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
+import com.dev.exfat.exfat.VeracryptVolumeData
 import com.dev.sillycrypt.presentation.screens.CreateVolumeScreen
 import com.dev.sillycrypt.presentation.screens.OpenVolumeScreen
 import com.dev.sillycrypt.settings.presentation.screens.SettingsScreen
 import com.libsillycrypt.workprofile.presentation.screens.WorkProfileSelectionScreen
+import com.sillycrypt.exfat_browser.presentation.screens.ExFatBrowserRoute
 
 private data class BottomItem(
     val destination: AppDestination,
@@ -86,9 +90,52 @@ fun AppNavHost(
             navController = navController,
             startDestination = AppDestination.PickFileNav.route
         ) {
-            navigation(AppDestination.PickFile.route, AppDestination.PickFileNav.route) {
+            navigation(
+                startDestination = AppDestination.PickFile.route,
+                route = AppDestination.PickFileNav.route
+            ) {
                 composable(AppDestination.PickFile.route) {
-                    OpenVolumeScreen(innerPadding = innerPadding, closeActivity = closeActivity)
+                    OpenVolumeScreen(
+                        innerPadding = innerPadding,
+                        closeActivity = closeActivity,
+                        onVolumeClick = { volumeData ->
+                            navController.navigate(
+                                AppDestination.ManageFiles.createRoute(volumeData)
+                            )
+                        }
+                    )
+                }
+
+                composable(
+                    route = AppDestination.ManageFiles.route,
+                    arguments = listOf(
+                        navArgument(AppDestination.ManageFiles.ARG_VOLUME_UUID) {
+                            type = NavType.StringType
+                        },
+                        navArgument(AppDestination.ManageFiles.ARG_VOLUME_NAME) {
+                            type = NavType.StringType
+                        }
+                    )
+                ) { backStackEntry ->
+                    val volumeUuid = requireNotNull(
+                        backStackEntry.arguments?.getString(
+                            AppDestination.ManageFiles.ARG_VOLUME_UUID
+                        )
+                    )
+
+                    val volumeName = requireNotNull(
+                        backStackEntry.arguments?.getString(
+                            AppDestination.ManageFiles.ARG_VOLUME_NAME
+                        )
+                    )
+
+                    ExFatBrowserRoute(
+                        innerPadding = innerPadding,
+                        volumeData = VeracryptVolumeData(
+                            name = volumeName,
+                            uuid = volumeUuid
+                        )
+                    )
                 }
             }
             composable(AppDestination.CreateFile.route) {

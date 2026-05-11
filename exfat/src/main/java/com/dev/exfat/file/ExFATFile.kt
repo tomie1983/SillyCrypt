@@ -43,6 +43,21 @@ class ExFATFile internal constructor(
 
     suspend fun listFiles(): List<ExFATFile> = handler.listFiles()
 
+    suspend fun deleteFile(name: String): Boolean {
+        require(isDirectory) { "Not a directory: $displayPath" }
+        val childPath = if (path == "/") {
+            "/$name"
+        } else {
+            "$path/$name"
+        }
+
+        return fileSystem.delete(childPath)
+    }
+
+    suspend fun delete(): Boolean {
+        return fileSystem.delete(path)
+    }
+
 
     suspend fun createFile(name: String): ExFATFile {
         require(isDirectory) { "Not a directory: $displayPath" }

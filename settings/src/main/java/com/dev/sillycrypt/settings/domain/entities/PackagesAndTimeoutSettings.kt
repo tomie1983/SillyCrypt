@@ -3,8 +3,7 @@ package com.dev.sillycrypt.settings.domain.entities
 import dev.sillycrypt.common.entities.ApplicationInfoWithData
 import kotlinx.collections.immutable.ImmutableList
 
-data class AppSettings(
+data class PackagesAndTimeoutSettings(
     val packagesToInstall: ImmutableList<ApplicationInfoWithData>,
-    val timeoutMillis: Long,
-    val isAppVisible: Boolean
+    val timeoutMillis: Long
 )

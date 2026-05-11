@@ -138,11 +138,86 @@ class ExFATFS(
 
     suspend fun exists(path: String): Boolean = getFileFromPath(path) != null
 
-    suspend fun createFile(path: String): ExFATFile = createNodeByPath(path, isDirectory = false)
+    /**
+     * Deletes a regular file from the exFAT volume.
+     *
+     * What this does:
+     * - resolves [path] to a directory entry-set;
+     * - rejects root and directories;
+     * - marks the primary + secondary directory entries as not-in-use;
+     * - releases file clusters in Allocation Bitmap and FAT;
+     * - updates percentInUse and invalidates in-memory state/cache for the deleted node.
+     *
+     * Returns false when [path] does not exist.
+     */
+    suspend fun delete(path: String): Boolean {
+        val normalized = normalizeAbsolutePath(path)
+        require(normalized != "/") { "Root directory cannot be deleted" }
 
-    suspend fun createDirectory(path: String): ExFATFile = createNodeByPath(path, isDirectory = true)
+        val parts = splitAbsolutePath(normalized)
+        val fileName = parts.last()
+        val parentPath = if (parts.size == 1) "/" else "/" + parts.dropLast(1).joinToString("/")
 
-    suspend fun mkdir(path: String): ExFATFile = createDirectory(path)
+        val data = createDataHandle()
+        try {
+            val parentState = resolveDirectoryState(parentPath, data)
+                ?: return false
+
+            return parentState.writeMutex.withLock {
+                val target = listDirectoryEntries(parentState, data).firstOrNull { it.name == fileName }
+                    ?: return@withLock false
+
+                require(!target.core.isDirectory) {
+                    "delete(path) supports only files. Use a separate empty-directory/rmdir implementation for: $normalized"
+                }
+
+                val targetState = internNodeState(target.nodeId, target.core, target.entrySetLocation)
+                targetState.writeMutex.withLock {
+                    withAllocationLock {
+                        val fsMeta = readConstantFileSystemMetadata()
+                        val bitmapInfo = readAllocationBitmapInfo()
+                        val fatStartBytes = buildFatStartBytes(fsMeta)
+
+                        serviceDataMutex.withLock {
+                            bootRegionOperator.setDirty(true)
+                            try {
+                                freeNodeClustersOnDelete(
+                                    core = target.core,
+                                    fsMeta = fsMeta,
+                                    bitmapInfo = bitmapInfo,
+                                    fatStartBytes = fatStartBytes
+                                )
+                                markDirectoryEntrySetDeleted(
+                                    data = serviceData,
+                                    location = target.entrySetLocation
+                                )
+                                updatePercentInUse(serviceData, bitmapInfo, fsMeta)
+
+                                nodeStateRegistry.remove(target.nodeId)
+                                targetState.update(
+                                    target.core.copy(
+                                        firstCluster = 0,
+                                        dataLength = 0,
+                                        validDataLength = 0,
+                                        readableLength = 0,
+                                        streamFlags = target.core.streamFlags and STREAM_FLAG_NO_FAT_CHAIN.inv(),
+                                        noFatChain = false
+                                    ),
+                                    null
+                                )
+                                changingMetadataCache = null
+                            } finally {
+                                bootRegionOperator.setDirty(false)
+                            }
+                        }
+                    }
+                    true
+                }
+            }
+        } finally {
+            data.close()
+        }
+    }
 
     suspend fun close() {
         nodeStateRegistry.clear()
@@ -553,6 +628,102 @@ class ExFATFS(
             val childDisplayPath = joinPath(parentDisplayPath, parsed.name)
             ExFATFile(this, childState, parsed.name, childDisplayPath)
         }
+    }
+
+    private suspend fun resolveDirectoryState(
+        normalizedDirectoryPath: String,
+        data: RandomAccessData
+    ): NodeState? {
+        val normalized = normalizeAbsolutePath(normalizedDirectoryPath)
+        if (normalized == "/") return getRootState()
+
+        var currentState = getRootState()
+        for (part in splitAbsolutePath(normalized)) {
+            val currentCore = currentState.snapshotCore()
+            if (!currentCore.isDirectory) return null
+
+            val next = listDirectoryEntries(currentState, data).firstOrNull { it.name == part }
+                ?: return null
+            if (!next.core.isDirectory) return null
+
+            currentState = internNodeState(next.nodeId, next.core, next.entrySetLocation)
+        }
+        return currentState
+    }
+
+    private suspend fun freeNodeClustersOnDelete(
+        core: NodeCoreMetadata,
+        fsMeta: ExFatFIleSystemConstantMetadata,
+        bitmapInfo: AllocationBitmapInfo,
+        fatStartBytes: LongArray
+    ) {
+        val clusterCount = clustersForSize(core.dataLength, fsMeta.bytesPerCluster)
+        if (clusterCount == 0 || core.firstCluster < CLUSTERS_OFFSET) return
+
+        if (core.noFatChain) {
+            bitmapOperator.markFreeRange(
+                bitmapStartByte = bitmapInfo.startByte,
+                firstCluster = core.firstCluster.toInt(),
+                count = clusterCount,
+                clusterCount = fsMeta.clusterCount
+            )
+        } else {
+            val walkLimit = (fsMeta.clusterCount + CLUSTERS_OFFSET).coerceAtLeast(DEFAULT_WALK_LIMIT)
+            val chain = fatOperator.walkChain(
+                data = serviceData,
+                firstCluster = core.firstCluster.toInt(),
+                fatStartByte = fatStartBytes[0],
+                maxSteps = walkLimit
+            )
+            if (chain.isNotEmpty()) {
+                bitmapOperator.markFreeClusters(bitmapInfo.startByte, chain, fsMeta.clusterCount)
+                fatOperator.freeChain(core.firstCluster.toInt(), fatStartBytes, walkLimit)
+                fatChainCacheMutex.withLock { fatChainCache.remove(core.firstCluster.toInt()) }
+            }
+        }
+    }
+
+    private suspend fun markDirectoryEntrySetDeleted(
+        data: RandomAccessData,
+        location: NodeEntrySetLocation
+    ) {
+        val primary = readDirectoryStreamRange(
+            data = data,
+            firstCluster = location.parentDirFirstCluster,
+            noFatChain = location.parentDirNoFatChain,
+            position = location.primaryEntryOffsetInParentBytes,
+            length = DIR_ENTRY_SIZE
+        )
+        val secondaryCount = u8(primary[1])
+        markDirectoryEntryDeleted(data, location, location.primaryEntryOffsetInParentBytes, primary)
+
+        for (i in 0 until secondaryCount) {
+            val secondaryOffset = location.primaryEntryOffsetInParentBytes + DIR_ENTRY_SIZE.toLong() * (i + 1)
+            val secondary = readDirectoryStreamRange(
+                data = data,
+                firstCluster = location.parentDirFirstCluster,
+                noFatChain = location.parentDirNoFatChain,
+                position = secondaryOffset,
+                length = DIR_ENTRY_SIZE
+            )
+            markDirectoryEntryDeleted(data, location, secondaryOffset, secondary)
+        }
+    }
+
+    private suspend fun markDirectoryEntryDeleted(
+        data: RandomAccessData,
+        location: NodeEntrySetLocation,
+        entryOffset: Long,
+        entryBytes: ByteArray
+    ) {
+        entryBytes[0] = (u8(entryBytes[0]) and 0x7F).toByte()
+        writeDirectoryStreamRange(
+            data = data,
+            firstCluster = location.parentDirFirstCluster,
+            noFatChain = location.parentDirNoFatChain,
+            position = entryOffset,
+            bytes = entryBytes
+        )
     }
 
     internal suspend fun readSeekableRange(

@@ -74,6 +74,7 @@ dependencies {
     debugImplementation(libs.androidx.ui.test.manifest)
     implementation(project(":libsillycript:android"))
     implementation(project(":exfat-android"))
+    implementation(project(":exfat-browser"))
     implementation(project(":core:serialization"))
     implementation(project(":workprofile"))
     implementation(project(":settings"))

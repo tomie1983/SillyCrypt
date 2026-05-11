@@ -12,6 +12,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.dev.exfat.exfat.VeracryptVolumeData
 import com.dev.sillycrypt.presentation.elements.ConfirmDialog
 import com.dev.sillycrypt.presentation.elements.ErrorDialog
 import com.dev.sillycrypt.presentation.elements.OpenVolumeFormContent
@@ -27,6 +28,7 @@ private const val TAG_PICK = "PickFileScreen"
 fun OpenVolumeScreen(
     innerPadding: PaddingValues,
     closeActivity: () -> Unit,
+    onVolumeClick: (VeracryptVolumeData) -> Unit,
     viewModel: OpenVolumeVM = hiltViewModel()
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -56,6 +58,7 @@ fun OpenVolumeScreen(
             is OpenVolumeUIState.Initial -> {
                 OpenVolumeInitialContent(
                     volumes = uiState.data,
+                    onVolumeClick = onVolumeClick,
                     onCloseVolume = viewModel::closeVolume,
                     onAddClick = {
                         filePickerLauncher.launch(arrayOf("*/*"))

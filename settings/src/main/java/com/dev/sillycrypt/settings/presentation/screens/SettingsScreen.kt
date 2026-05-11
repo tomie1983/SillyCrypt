@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -21,6 +22,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -57,6 +59,10 @@ fun SettingsScreen(
         settingsViewModel::setDialogState
     }
 
+    val hideApp = remember {
+        settingsViewModel::hideApp
+    }
+
     val settingsState = state.value
 
     when (settingsState) {
@@ -75,7 +81,8 @@ fun SettingsScreen(
                 innerPadding = innerPadding,
                 onPackageInstallChanged = onPackageInstallChanged,
                 onTimeoutChanged = onTimeoutChanged,
-                setDialogState = setDialogState
+                setDialogState = setDialogState,
+                hideApp = hideApp
             )
         }
     }
@@ -87,7 +94,8 @@ private fun SettingsContent(
     innerPadding: PaddingValues,
     onPackageInstallChanged: (app: ApplicationInfo, install: Boolean) -> Unit,
     onTimeoutChanged: (Long) -> Unit,
-    setDialogState: (Boolean) -> Unit
+    setDialogState: (Boolean) -> Unit,
+    hideApp: (Boolean) -> Unit
 ) {
     var timeoutText by remember(state.timeout) {
         mutableStateOf("")
@@ -160,7 +168,37 @@ private fun SettingsContent(
                 style = MaterialTheme.typography.bodyLarge
             )
         }
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        SettingsSectionTitle("App hiding settings")
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable {
+                    setDialogState(true)
+                },
+            shape = MaterialTheme.shapes.medium,
+            tonalElevation = 2.dp
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Hide app icon from launcher",
+                    modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.bodyLarge
+                )
+                Switch(!state.appIsVisible, hideApp)
+            }
+        }
     }
+
+
 
     if (state.showDialog) {
         AppsToInstallDialog(

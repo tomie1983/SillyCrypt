@@ -1,5 +1,6 @@
 package com.dev.sillycrypt.presentation.elements
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -31,6 +32,7 @@ import kotlinx.collections.immutable.ImmutableList
 @Composable
 fun OpenVolumeInitialContent(
     volumes: ImmutableList<VeracryptVolumeData>,
+    onVolumeClick: (VeracryptVolumeData) -> Unit,
     onCloseVolume: (String) -> Unit,
     onAddClick: () -> Unit
 ) {
@@ -45,7 +47,11 @@ fun OpenVolumeInitialContent(
                 key = { it.uuid }
             ) { volume ->
                 Card(
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable {
+                            onVolumeClick(volume)
+                        }
                 ) {
                     Row(
                         modifier = Modifier
@@ -61,14 +67,21 @@ fun OpenVolumeInitialContent(
                                 text = volume.name,
                                 style = MaterialTheme.typography.titleMedium
                             )
+
                             Spacer(modifier = Modifier.height(4.dp))
+
                             Text(
                                 text = volume.uuid,
-                                style = MaterialTheme.typography.bodyMedium
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
 
-                        IconButton(onClick = { onCloseVolume(volume.uuid) }) {
+                        IconButton(
+                            onClick = {
+                                onCloseVolume(volume.uuid)
+                            }
+                        ) {
                             Icon(
                                 imageVector = Icons.Default.Close,
                                 contentDescription = "Закрыть том"
