@@ -35,7 +35,7 @@ abstract class WorkProfileModule {
 
     companion object {
 
-        private const val WORK_PROFILE_SETTINGS = "app_settings.json"
+        private const val WORK_PROFILE_SETTINGS = "workprofile_app_settings.json"
         private const val AUTH_DATA_SETTINGS = "auth_data_settings.json"
 
         @Provides

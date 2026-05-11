@@ -63,7 +63,11 @@ class ExFATBrowserRepositoryImpl @Inject constructor(
     }
 
     override suspend fun deleteFile(file: ExFATFile) {
-        file.delete()
+        if (file.isDirectory) {
+            file.deleteRecursively()
+        } else {
+            file.delete()
+        }
         refreshFS()
     }
 

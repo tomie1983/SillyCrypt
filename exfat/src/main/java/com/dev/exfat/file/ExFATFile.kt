@@ -58,6 +58,9 @@ class ExFATFile internal constructor(
         return fileSystem.delete(path)
     }
 
+    suspend fun deleteRecursively(): Boolean {
+        return fileSystem.delete(path, recursive = true)
+    }
 
     suspend fun createFile(name: String): ExFATFile {
         require(isDirectory) { "Not a directory: $displayPath" }

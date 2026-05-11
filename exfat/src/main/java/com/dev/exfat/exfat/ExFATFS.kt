@@ -142,41 +142,74 @@ class ExFATFS(
 
     suspend fun exists(path: String): Boolean = getFileFromPath(path) != null
 
-    /**
-     * Deletes a regular file from the exFAT volume.
-     *
-     * What this does:
-     * - resolves [path] to a directory entry-set;
-     * - rejects root and directories;
-     * - marks the primary + secondary directory entries as not-in-use;
-     * - releases file clusters in Allocation Bitmap and FAT;
-     * - updates percentInUse and invalidates in-memory state/cache for the deleted node.
-     *
-     * Returns false when [path] does not exist.
-     */
-    suspend fun delete(path: String): Boolean {
-        val normalized = normalizeAbsolutePath(path)
+    private data class DeleteTarget(
+        val parentState: NodeState,
+        val childName: String,
+        val target: ParsedDirectoryNode
+    )
+
+    private suspend fun resolveChildForDelete(
+        normalizedPath: String,
+        data: RandomAccessData
+    ): DeleteTarget? {
+        val normalized = normalizeAbsolutePath(normalizedPath)
         require(normalized != "/") { "Root directory cannot be deleted" }
 
         val parts = splitAbsolutePath(normalized)
-        val fileName = parts.last()
-        val parentPath = if (parts.size == 1) "/" else "/" + parts.dropLast(1).joinToString("/")
+        if (parts.isEmpty()) return null
 
+        val childName = parts.last()
+        val parentPath = if (parts.size == 1) {
+            "/"
+        } else {
+            "/" + parts.dropLast(1).joinToString("/")
+        }
+
+        val parentState = resolveDirectoryState(parentPath, data)
+            ?: return null
+
+        val target = listDirectoryEntries(parentState, data)
+            .firstOrNull { it.name == childName }
+            ?: return null
+
+        return DeleteTarget(
+            parentState = parentState,
+            childName = childName,
+            target = target
+        )
+    }
+
+    private suspend fun deleteSingleFileOrEmptyDirectory(normalizedPath: String): Boolean {
         val data = createDataHandle()
+
         try {
-            val parentState = resolveDirectoryState(parentPath, data)
+            val resolved = resolveChildForDelete(normalizedPath, data)
                 ?: return false
 
+            val parentState = resolved.parentState
+            val target = resolved.target
+
             return parentState.writeMutex.withLock {
-                val target = listDirectoryEntries(parentState, data).firstOrNull { it.name == fileName }
+                val freshTarget = listDirectoryEntries(parentState, data)
+                    .firstOrNull { it.name == resolved.childName }
                     ?: return@withLock false
 
-                require(!target.core.isDirectory) {
-                    "delete(path) supports only files. Use a separate empty-directory/rmdir implementation for: $normalized"
-                }
+                val targetState = internNodeState(
+                    nodeId = freshTarget.nodeId,
+                    core = freshTarget.core,
+                    entrySetLocation = freshTarget.entrySetLocation
+                )
 
-                val targetState = internNodeState(target.nodeId, target.core, target.entrySetLocation)
                 targetState.writeMutex.withLock {
+                    if (freshTarget.core.isDirectory) {
+                        val children = listDirectoryEntries(targetState, data)
+                            .filterNot { it.name == "." || it.name == ".." }
+
+                        check(children.isEmpty()) {
+                            "Directory is not empty: $normalizedPath"
+                        }
+                    }
+
                     withAllocationLock {
                         val fsMeta = readConstantFileSystemMetadata()
                         val bitmapInfo = readAllocationBitmapInfo()
@@ -184,43 +217,138 @@ class ExFATFS(
 
                         serviceDataMutex.withLock {
                             bootRegionOperator.setDirty(true)
+
                             try {
                                 freeNodeClustersOnDelete(
-                                    core = target.core,
+                                    core = freshTarget.core,
                                     fsMeta = fsMeta,
                                     bitmapInfo = bitmapInfo,
                                     fatStartBytes = fatStartBytes
                                 )
+
                                 markDirectoryEntrySetDeleted(
                                     data = serviceData,
-                                    location = target.entrySetLocation
+                                    location = freshTarget.entrySetLocation
                                 )
-                                updatePercentInUse(serviceData, bitmapInfo, fsMeta)
 
-                                nodeStateRegistry.remove(target.nodeId)
+                                updatePercentInUse(
+                                    data = serviceData,
+                                    bitmapInfo = bitmapInfo,
+                                    fsMeta = fsMeta
+                                )
+
+                                nodeStateRegistry.remove(freshTarget.nodeId)
+
                                 targetState.update(
-                                    target.core.copy(
+                                    freshTarget.core.copy(
                                         firstCluster = 0,
                                         dataLength = 0,
                                         validDataLength = 0,
                                         readableLength = 0,
-                                        streamFlags = target.core.streamFlags and STREAM_FLAG_NO_FAT_CHAIN.inv(),
+                                        streamFlags = buildStreamFlags(noFatChain = false),
                                         noFatChain = false
                                     ),
                                     null
                                 )
+
                                 changingMetadataCache = null
+
+                                if (freshTarget.core.isDirectory) {
+                                    allocationBitmapInfoCache = null
+                                }
                             } finally {
                                 bootRegionOperator.setDirty(false)
                             }
                         }
                     }
+
                     true
                 }
             }
         } finally {
             data.close()
         }
+    }
+
+    private suspend fun deleteChildrenIfDirectory(normalizedPath: String): Boolean {
+        val data = createDataHandle()
+
+        try {
+            val resolved = resolveChildForDelete(normalizedPath, data)
+                ?: return false
+
+            val target = resolved.target
+
+            if (!target.core.isDirectory) {
+                return true
+            }
+
+            val targetState = internNodeState(
+                nodeId = target.nodeId,
+                core = target.core,
+                entrySetLocation = target.entrySetLocation
+            )
+
+            val children = listDirectoryEntries(targetState, data)
+                .filterNot { it.name == "." || it.name == ".." }
+                .map { child ->
+                    joinPath(normalizedPath, child.name)
+                }
+
+            data.close()
+
+            for (childPath in children) {
+                val deleted = delete(
+                    path = childPath,
+                    recursive = true
+                )
+
+                check(deleted) {
+                    "Failed to delete child while deleting directory recursively: $childPath"
+                }
+            }
+
+            return true
+        } finally {
+            runCatching {
+                data.close()
+            }
+        }
+    }
+
+    suspend fun delete(path: String): Boolean {
+        return delete(path = path, recursive = false)
+    }
+
+    suspend fun deleteRecursively(path: String): Boolean {
+        return delete(path = path, recursive = true)
+    }
+
+    /**
+     * Deletes a file or directory from the exFAT volume.
+     *
+     * Behavior:
+     * - regular file: always deleted;
+     * - empty directory: deleted;
+     * - non-empty directory:
+     *   - recursive=false -> throws IllegalStateException;
+     *   - recursive=true -> deletes all children first, then the directory itself.
+     *
+     * Returns false when [path] does not exist.
+     */
+    suspend fun delete(
+        path: String,
+        recursive: Boolean
+    ): Boolean {
+        val normalized = normalizeAbsolutePath(path)
+        require(normalized != "/") { "Root directory cannot be deleted" }
+
+        if (recursive) {
+            val exists = deleteChildrenIfDirectory(normalized)
+            if (!exists) return false
+        }
+
+        return deleteSingleFileOrEmptyDirectory(normalized)
     }
 
     suspend fun close() {

@@ -6,6 +6,7 @@ import android.content.Intent
 import android.database.Cursor
 import android.net.Uri
 import android.provider.OpenableColumns
+import android.webkit.MimeTypeMap
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -59,6 +60,8 @@ import com.dev.exfat.exfat.VeracryptVolumeData
 import com.dev.exfat.file.ExFATFile
 import com.sillycrypt.exfat_browser.presentation.state.ExFATBrowserState
 import com.sillycrypt.exfat_browser.presentation.viewModel.ExFatBrowserVM
+import androidx.core.net.toUri
+import com.sillycrypt.exfat_android.provider.ExFatDocumentsProvider
 
 @Composable
 fun ExFatBrowserRoute(
@@ -398,10 +401,18 @@ private fun Context.openExFatFileForEdit(
     volumeUuid: String,
     file: ExFATFile
 ) {
-    val editUri = Uri.parse("$volumeUuid:${file.path}")
+    val authority = "${packageName}.documents"
+
+    val editUri = ExFatDocumentsProvider.buildDocumentUri(
+        authority = authority,
+        volumeId = volumeUuid,
+        absolutePath = file.path
+    )
+
+    val mimeType = guessMimeType(file.name)
 
     val intent = Intent(Intent.ACTION_EDIT).apply {
-        setDataAndType(editUri, "*/*")
+        setDataAndType(editUri, mimeType)
         addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
     }
@@ -410,6 +421,18 @@ private fun Context.openExFatFileForEdit(
         startActivity(Intent.createChooser(intent, "Открыть файл"))
     } catch (_: ActivityNotFoundException) {
         Toast.makeText(this, "Нет приложения для открытия файла", Toast.LENGTH_SHORT).show()
+    }
+}
+
+private fun guessMimeType(name: String): String {
+    val ext = name.substringAfterLast('.', "").lowercase()
+
+    return if (ext.isEmpty()) {
+        "application/octet-stream"
+    } else {
+        MimeTypeMap.getSingleton()
+            .getMimeTypeFromExtension(ext)
+            ?: "application/octet-stream"
     }
 }
 

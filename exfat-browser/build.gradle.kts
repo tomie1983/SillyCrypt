@@ -59,4 +59,5 @@ dependencies {
     implementation(libs.datastore)
     implementation(libs.immutable.collections)
     implementation(project(":exfat"))
+    implementation(project(":exfat-android"))
 }
