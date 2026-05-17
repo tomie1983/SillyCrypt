@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="create_file">Create file</string>
+    <string name="create_directory">Create directory</string>
+    <string name="copy_file">Copy file</string>
+    <string name="file_name">File name</string>
+    <string name="directory_name">Directory name</string>
+    <string name="create">Create</string>
+    <string name="cancel">Cancel</string>
+    <string name="open_file">Open file</string>
+    <string name="app_not_found">No app found to open the file</string>
+</resources>

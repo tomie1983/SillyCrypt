@@ -52,6 +52,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
@@ -62,6 +63,7 @@ import com.sillycrypt.exfat_browser.presentation.state.ExFATBrowserState
 import com.sillycrypt.exfat_browser.presentation.viewModel.ExFatBrowserVM
 import androidx.core.net.toUri
 import com.sillycrypt.exfat_android.provider.ExFatDocumentsProvider
+import com.sillycrypt.exfat_browser.R
 
 @Composable
 fun ExFatBrowserRoute(
@@ -303,7 +305,7 @@ private fun ExFatBrowserFabMenu(
                         Icon(Icons.Default.Description, contentDescription = null)
                     },
                     text = {
-                        Text("Создать файл")
+                        Text(stringResource(R.string.create_file))
                     }
                 )
 
@@ -313,7 +315,7 @@ private fun ExFatBrowserFabMenu(
                         Icon(Icons.Default.CreateNewFolder, contentDescription = null)
                     },
                     text = {
-                        Text("Создать папку")
+                        Text(stringResource(R.string.create_directory))
                     }
                 )
 
@@ -323,7 +325,7 @@ private fun ExFatBrowserFabMenu(
                         Icon(Icons.Default.UploadFile, contentDescription = null)
                     },
                     text = {
-                        Text("Скопировать файл")
+                        Text(stringResource(R.string.copy_file))
                     }
                 )
             }
@@ -350,13 +352,13 @@ private fun CreateEntryDialog(
     var name by remember { mutableStateOf("") }
 
     val title = when (type) {
-        CreateDialogType.File -> "Создать файл"
-        CreateDialogType.Directory -> "Создать папку"
+        CreateDialogType.File -> stringResource(R.string.create_file)
+        CreateDialogType.Directory -> stringResource(R.string.create_directory)
     }
 
     val label = when (type) {
-        CreateDialogType.File -> "Название файла"
-        CreateDialogType.Directory -> "Название папки"
+        CreateDialogType.File -> stringResource(R.string.file_name)
+        CreateDialogType.Directory -> stringResource(R.string.directory_name)
     }
 
     AlertDialog(
@@ -381,12 +383,12 @@ private fun CreateEntryDialog(
                     onConfirm(name.trim())
                 }
             ) {
-                Text("Создать")
+                Text(stringResource(R.string.create))
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("Отмена")
+                Text(stringResource(R.string.cancel))
             }
         }
     )
@@ -418,9 +420,9 @@ private fun Context.openExFatFileForEdit(
     }
 
     try {
-        startActivity(Intent.createChooser(intent, "Открыть файл"))
+        startActivity(Intent.createChooser(intent, getString(R.string.open_file)))
     } catch (_: ActivityNotFoundException) {
-        Toast.makeText(this, "Нет приложения для открытия файла", Toast.LENGTH_SHORT).show()
+        Toast.makeText(this, getString(R.string.app_not_found), Toast.LENGTH_SHORT).show()
     }
 }
 

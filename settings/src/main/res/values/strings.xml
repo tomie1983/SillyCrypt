@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="key_destruction_settings">Key destruction timeout</string>
+    <string name="timeout_millis">Timeout (ms)</string>
+    <string name="save">Save</string>
+    <string name="work_profile">Work profile settings</string>
+    <string name="choose_apps">Choose apps to install</string>
+    <string name="app_hiding_settings">App hiding settings</string>
+    <string name="hide_app_icon">Hide app icon from launcher</string>
+</resources>

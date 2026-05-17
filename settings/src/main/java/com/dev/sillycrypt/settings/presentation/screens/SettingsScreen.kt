@@ -33,10 +33,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import com.dev.sillycrypt.settings.R
 import com.dev.sillycrypt.settings.presentation.state.SettingsScreenState
 import com.dev.sillycrypt.settings.presentation.viewmodels.SettingsVM
 import dev.sillycrypt.common.entities.ApplicationInfoWithData
@@ -107,7 +109,7 @@ private fun SettingsContent(
             .padding(innerPadding)
             .padding(16.dp)
     ) {
-        SettingsSectionTitle("Key destruction timeout")
+        SettingsSectionTitle(stringResource(R.string.key_destruction_settings))
 
         Spacer(modifier = Modifier.height(8.dp))
 
@@ -124,7 +126,7 @@ private fun SettingsContent(
             },
             singleLine = true,
             label = {
-                Text("Timeout millis")
+                Text(stringResource(R.string.timeout_millis))
             },
             keyboardOptions = KeyboardOptions(
                 keyboardType = KeyboardType.Number,
@@ -142,14 +144,14 @@ private fun SettingsContent(
                     },
                     enabled = timeoutText.toLongOrNull() != null
                 ) {
-                    Text("Save")
+                    Text(stringResource(R.string.save))
                 }
             }
         )
 
         Spacer(modifier = Modifier.height(24.dp))
 
-        SettingsSectionTitle("Work profile settings")
+        SettingsSectionTitle(stringResource(R.string.work_profile))
 
         Spacer(modifier = Modifier.height(8.dp))
 
@@ -163,7 +165,7 @@ private fun SettingsContent(
             tonalElevation = 2.dp
         ) {
             Text(
-                text = "Choose apps to install",
+                text = stringResource(R.string.choose_apps),
                 modifier = Modifier.padding(16.dp),
                 style = MaterialTheme.typography.bodyLarge
             )
@@ -171,7 +173,7 @@ private fun SettingsContent(
 
         Spacer(modifier = Modifier.height(24.dp))
 
-        SettingsSectionTitle("App hiding settings")
+        SettingsSectionTitle(stringResource(R.string.app_hiding_settings))
 
         Spacer(modifier = Modifier.height(8.dp))
 
@@ -189,7 +191,7 @@ private fun SettingsContent(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "Hide app icon from launcher",
+                    text = stringResource(R.string.hide_app_icon),
                     modifier = Modifier.weight(1f),
                     style = MaterialTheme.typography.bodyLarge
                 )

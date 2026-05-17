@@ -1,9 +1,12 @@
-package com.dev.exfat.exfat
+package com.dev.exfat
 
 import com.dev.exfat.data.MemoryRandomAccessData
 import com.dev.exfat.data.RandomAccessData
 import com.dev.exfat.data.RandomAccessDataFactory
+import com.dev.exfat.exfat.ExFATCreator
+import com.dev.exfat.exfat.ExFATFS
 import com.dev.exfat.file.ExFATFile
+import com.dev.exfat.file.SeekableFileHandle
 import com.dev.exfat.file.SeekableOpenOptions
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -17,6 +20,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.security.MessageDigest
+import kotlin.collections.iterator
 
 class ExFATFSTest {
 
@@ -497,8 +501,8 @@ class ExFATFSTest {
         }
     }
 
-    private suspend inline fun <T> com.dev.exfat.file.SeekableFileHandle.useSuspend(
-        block: suspend (com.dev.exfat.file.SeekableFileHandle) -> T
+    private suspend inline fun <T> SeekableFileHandle.useSuspend(
+        block: suspend (SeekableFileHandle) -> T
     ): T {
         try {
             return block(this)

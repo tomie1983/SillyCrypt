@@ -1,21 +1,22 @@
 package com.dev.sillycrypt.presentation.navigation
 
 import android.net.Uri
+import androidx.annotation.StringRes
 import com.dev.exfat.exfat.VeracryptVolumeData
-
+import com.dev.sillycrypt.R
 
 sealed class AppDestination(
     val route: String,
-    val label: String
+    @StringRes val label: Int
 ) {
     data object PickFile : AppDestination(
         route = "pick_file",
-        label = "Pick"
+        label = R.string.pick
     )
 
     data object ManageFiles : AppDestination(
         route = "manage_files/{volumeUuid}/{volumeName}",
-        label = "Manage files"
+        label = R.string.manage_files
     ) {
         const val ARG_VOLUME_UUID = "volumeUuid"
         const val ARG_VOLUME_NAME = "volumeName"
@@ -27,21 +28,21 @@ sealed class AppDestination(
 
     data object PickFileNav : AppDestination(
         route = "pick_file_nav",
-        label = "Pick"
+        label = R.string.pick
     )
 
     data object CreateFile : AppDestination(
         route = "create_file",
-        label = "Create"
+        label = R.string.create
     )
 
     data object ManageWorkProfile: AppDestination(
         route = "manage_work_profile",
-        label = "Work profile"
+        label = R.string.work_profile
     )
 
     data object Settings: AppDestination(
         route = "settings",
-        label = "Settings"
+        label = R.string.settings
     )
 }

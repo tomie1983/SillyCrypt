@@ -1,3 +1,8 @@
 <resources>
-    <string name="app_name">SillyCrypt</string>
+    <string name="app_name" translatable="false">SillyCrypt</string>
+    <string name="manage_files">Manage files</string>
+    <string name="pick">Pick</string>
+    <string name="create">Create</string>
+    <string name="work_profile">Work profile</string>
+    <string name="settings">Settings</string>
 </resources>

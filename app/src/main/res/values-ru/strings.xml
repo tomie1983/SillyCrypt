@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">SillyCrypt</string>
+    <string name="manage_files">Управление файлами</string>
+    <string name="pick">Выбрать</string>
+    <string name="create">Создать</string>
+    <string name="work_profile">Рабочий профиль</string>
+    <string name="settings">Настройки</string>
+</resources>

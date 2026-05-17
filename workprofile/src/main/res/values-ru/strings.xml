@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="channel_name">SillyCrypt</string>
+    <string name="service_title">Сервис SillyCrypt</string>
+    <string name="service_desc">Сервис SillyCrypt</string>
+    <string name="create_workprofile">Создать рабочий профиль</string>
+    <string name="delete_workprofile">Удалить рабочий профиль</string>
+</resources>

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="key_destruction_settings">Таймаут уничтожения ключа</string>
+    <string name="timeout_millis">Таймаут (мс)</string>
+    <string name="save">Сохранить</string>
+    <string name="work_profile">Настройки рабочего профиля</string>
+    <string name="choose_apps">Выбор приложений для установки</string>
+    <string name="app_hiding_settings">Настройки скрытия приложений</string>
+    <string name="hide_app_icon">Спрятать иконку из лаунчера</string>
+</resources>
