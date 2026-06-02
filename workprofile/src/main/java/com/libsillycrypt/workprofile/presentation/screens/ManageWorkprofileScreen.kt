@@ -23,7 +23,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import com.dev.sillycrypt.settings.presentation.screens.AppListItem
+import dev.sillycrypt.common.elements.AppListItem
 import com.libsillycrypt.workprofile.R
 import dev.sillycrypt.common.entities.ApplicationInfoWithData
 import kotlinx.collections.immutable.ImmutableList

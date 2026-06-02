@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="file_selection_error">File selection error</string>
+    <string name="incorrect_volume_params">Incorrect volume params</string>
+    <string name="failed_to_open">Failed to open volume</string>
+    <string name="failed_to_select_file">Failed to select file</string>
+    <string name="failed_to_close_volume">Failed to close volume</string>
+    <string name="failed_to_create_volume">Failed to create volume</string>
+    <string name="close_volume">Close volume</string>
+    <string name="close">Close</string>
+    <string name="copy">Copy</string>
+    <string name="cancel_volume_opening">Stop opening volume?</string>
+    <string name="volume_would_not_be_opened">Volume would not be opened</string>
+    <string name="stop">Stop</string>
+    <string name="continue_opening">Continue</string>
+    <string name="exit_form">Exit form?</string>
+    <string name="selected_file_forgotten">Selected file would be forgotten</string>
+    <string name="exit">Exit</string>
+    <string name="stay">Stay</string>
+</resources>

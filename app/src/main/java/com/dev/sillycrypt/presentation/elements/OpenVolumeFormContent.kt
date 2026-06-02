@@ -16,70 +16,70 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.dev.libsillycript.core.blockCiphers.BlockCipherType
 import com.dev.libsillycript.core.fs.FsType
 import com.dev.libsillycript.core.kdfs.KDFType
+import com.dev.sillycrypt.R
 import com.dev.sillycrypt.presentation.states.OpenVolumeUIState
+import dev.sillycrypt.common.elements.OutlinedSecureIncognitoTextField
 
 @Composable
 fun OpenVolumeFormContent(
     state: OpenVolumeUIState.OpenVolumeFormState,
-    onPasswordChange: (String) -> Unit,
+    onPasswordChange: (CharSequence) -> Unit,
     onKdfChange: (KDFType) -> Unit,
     onCipherChange: (BlockCipherType) -> Unit,
     onFsTypeChange: (FsType) -> Unit,
-    onPimChange: (String) -> Unit,
-    onIndexChange: (String) -> Unit,
+    onPimChange: (CharSequence) -> Unit,
+    onIndexChange: (CharSequence) -> Unit,
     onHiddenVolumeChange: (Boolean) -> Unit,
     onProtectHiddenChange: (Boolean) -> Unit,
-    onHiddenPasswordChange: (String) -> Unit,
+    onHiddenPasswordChange: (CharSequence) -> Unit,
     onHiddenKdfChange: (KDFType) -> Unit,
     onHiddenCipherChange: (BlockCipherType) -> Unit,
-    onHiddenPimChange: (String) -> Unit,
-    onHiddenIndexChange: (String) -> Unit,
+    onHiddenPimChange: (CharSequence) -> Unit,
+    onHiddenIndexChange: (CharSequence) -> Unit,
     onOpenClick: () -> Unit
 ) {
-    val pimValue = state.pim.toIntOrNull()
-    val indexValue = state.index.toIntOrNull()
+    val pimValue = state.pim.toString().toIntOrNull()
+    val indexValue = state.index.toString().toIntOrNull()
 
     val pimError = when {
-        state.pim.isBlank() -> "Введите PIM"
-        pimValue == null -> "PIM должен быть числом"
-        pimValue < 0 -> "PIM должен быть >= 0"
+        state.pim.isBlank() -> stringResource(R.string.please_enter_pim)
+        pimValue == null -> stringResource(R.string.pim_not_a_number)
+        pimValue < 0 -> stringResource(R.string.pim_is_too_small)
         else -> null
     }
 
     val indexError = when {
-        state.index.isBlank() -> "Введите index"
-        indexValue == null -> "Index должен быть числом"
-        indexValue < 0 -> "Index должен быть >= 0"
-        indexValue > 256 -> "Index должен быть <= 256"
+        state.index.isBlank() -> stringResource(R.string.please_enter_index)
+        indexValue == null -> stringResource(R.string.index_is_not_a_number)
+        indexValue < 0 -> stringResource(R.string.index_too_small)
+        indexValue > 256 -> stringResource(R.string.index_too_big)
         else -> null
     }
 
-    val hiddenPimValue = state.hiddenPim.toIntOrNull()
-    val hiddenIndexValue = state.hiddenIndex.toIntOrNull()
-
+    val hiddenPimValue = state.hiddenPim.toString().toIntOrNull()
+    val hiddenIndexValue = state.hiddenIndex.toString().toIntOrNull()
     val hiddenPimError = when {
-        state.hiddenPim.isBlank() -> "Введите PIM скрытого тома"
-        hiddenPimValue == null -> "PIM скрытого тома должен быть числом"
-        hiddenPimValue < 0 -> "PIM скрытого тома должен быть >= 0"
+        state.hiddenPim.isBlank() -> stringResource(R.string.please_enter_pim)
+        hiddenPimValue == null -> stringResource(R.string.pim_not_a_number)
+        hiddenPimValue < 0 -> stringResource(R.string.pim_is_too_small)
         else -> null
     }
 
     val hiddenIndexError = when {
-        state.hiddenIndex.isBlank() -> "Введите index скрытого тома"
-        hiddenIndexValue == null -> "Index скрытого тома должен быть числом"
-        hiddenIndexValue < 0 -> "Index скрытого тома должен быть >= 0"
-        hiddenIndexValue > 256 -> "Index скрытого тома должен быть <= 256"
+        state.hiddenIndex.isBlank() -> stringResource(R.string.please_enter_index)
+        hiddenIndexValue == null -> stringResource(R.string.index_is_not_a_number)
+        hiddenIndexValue < 0 -> stringResource(R.string.index_too_small)
+        hiddenIndexValue > 256 -> stringResource(R.string.index_too_big)
         else -> null
     }
 
@@ -104,24 +104,23 @@ fun OpenVolumeFormContent(
     ) {
         item {
             Text(
-                text = "Файл: ${state.name}",
+                text = stringResource(R.string.file, state.name),
                 style = MaterialTheme.typography.titleMedium
             )
         }
 
         item {
-            OutlinedTextField(
-                value = state.password,
-                onValueChange = onPasswordChange,
+            OutlinedSecureIncognitoTextField(
                 modifier = Modifier.fillMaxWidth(),
-                label = { Text("Пароль") },
-                visualTransformation = PasswordVisualTransformation()
+                initialText = state.password,
+                onTextChange = onPasswordChange,
+                label = { Text(stringResource(R.string.password)) },
             )
         }
 
         item {
             EnumDropdown(
-                label = "KDF",
+                label = stringResource(R.string.kdf),
                 selected = state.kdf,
                 values = KDFType.entries,
                 onSelected = onKdfChange
@@ -130,7 +129,7 @@ fun OpenVolumeFormContent(
 
         item {
             EnumDropdown(
-                label = "Шифр",
+                label = stringResource(R.string.encryption_mode),
                 selected = state.cipher,
                 values = BlockCipherType.entries,
                 onSelected = onCipherChange
@@ -139,7 +138,7 @@ fun OpenVolumeFormContent(
 
         item {
             EnumDropdown(
-                label = "FsType",
+                label = stringResource(R.string.fs_type),
                 selected = state.fsType,
                 values = FsType.entries,
                 onSelected = onFsTypeChange
@@ -147,11 +146,11 @@ fun OpenVolumeFormContent(
         }
 
         item {
-            OutlinedTextField(
-                value = state.pim,
-                onValueChange = onPimChange,
+            OutlinedSecureIncognitoTextField(
+                initialText = state.pim,
+                onTextChange = onPimChange,
                 modifier = Modifier.fillMaxWidth(),
-                label = { Text("PIM") },
+                label = { Text(stringResource(R.string.pim)) },
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                 isError = pimError != null,
                 supportingText = {
@@ -163,11 +162,11 @@ fun OpenVolumeFormContent(
         }
 
         item {
-            OutlinedTextField(
-                value = state.index,
-                onValueChange = onIndexChange,
+            OutlinedSecureIncognitoTextField(
+                initialText = state.index,
+                onTextChange = onIndexChange,
                 modifier = Modifier.fillMaxWidth(),
-                label = { Text("Index") },
+                label = { Text(stringResource(R.string.index)) },
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                 isError = indexError != null,
                 supportingText = {
@@ -184,7 +183,7 @@ fun OpenVolumeFormContent(
                     checked = state.isHiddenVolume,
                     onCheckedChange = onHiddenVolumeChange
                 )
-                Text("Скрытый том")
+                Text(stringResource(R.string.hidden_volume))
             }
         }
 
@@ -195,7 +194,7 @@ fun OpenVolumeFormContent(
                         checked = state.protectHiddenVolume,
                         onCheckedChange = onProtectHiddenChange
                     )
-                    Text("Защитить скрытый том")
+                    Text(stringResource(R.string.protect_hidden_volume))
                 }
             }
         }
@@ -209,33 +208,32 @@ fun OpenVolumeFormContent(
                 Column(
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    OutlinedTextField(
-                        value = state.hiddenPassword,
-                        onValueChange = onHiddenPasswordChange,
+                    OutlinedSecureIncognitoTextField(
+                        initialText = state.hiddenPassword,
+                        onTextChange = onHiddenPasswordChange,
                         modifier = Modifier.fillMaxWidth(),
-                        label = { Text("Пароль скрытого тома") },
-                        visualTransformation = PasswordVisualTransformation()
+                        label = { Text(stringResource(R.string.password)) },
                     )
 
                     EnumDropdown(
-                        label = "KDF скрытого тома",
+                        label = stringResource(R.string.kdf),
                         selected = state.hiddenKdf,
                         values = KDFType.entries,
                         onSelected = onHiddenKdfChange
                     )
 
                     EnumDropdown(
-                        label = "Шифр скрытого тома",
+                        label = stringResource(R.string.encryption_mode),
                         selected = state.hiddenCipher,
                         values = BlockCipherType.entries,
                         onSelected = onHiddenCipherChange
                     )
 
-                    OutlinedTextField(
-                        value = state.hiddenPim,
-                        onValueChange = onHiddenPimChange,
+                    OutlinedSecureIncognitoTextField(
+                        initialText = state.hiddenPim,
+                        onTextChange = onHiddenPimChange,
                         modifier = Modifier.fillMaxWidth(),
-                        label = { Text("PIM скрытого тома") },
+                        label = { Text(stringResource(R.string.pim)) },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         isError = hiddenPimError != null,
                         supportingText = {
@@ -245,11 +243,11 @@ fun OpenVolumeFormContent(
                         }
                     )
 
-                    OutlinedTextField(
-                        value = state.hiddenIndex,
-                        onValueChange = onHiddenIndexChange,
+                    OutlinedSecureIncognitoTextField(
+                        initialText = state.hiddenIndex,
+                        onTextChange = onHiddenIndexChange,
                         modifier = Modifier.fillMaxWidth(),
-                        label = { Text("Index скрытого тома") },
+                        label = { Text(stringResource(R.string.index)) },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         isError = hiddenIndexError != null,
                         supportingText = {
@@ -268,7 +266,7 @@ fun OpenVolumeFormContent(
                 enabled = openEnabled,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Text("Открыть том")
+                Text(stringResource(R.string.open_volume))
             }
         }
     }

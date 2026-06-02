@@ -1,6 +1,8 @@
 package com.dev.sillycrypt.presentation.states
 
+import dev.sillycrypt.common.text.UIText
+
 class ErrorState(
-    val title: String,
-    val message: String
+    val title: UIText,
+    val message: UIText
 )

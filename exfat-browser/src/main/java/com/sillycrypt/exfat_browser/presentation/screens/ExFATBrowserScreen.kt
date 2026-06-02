@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CreateNewFolder
@@ -38,7 +39,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -53,17 +53,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.input.PlatformImeOptions
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.dev.exfat.exfat.VeracryptVolumeData
 import com.dev.exfat.file.ExFATFile
-import com.sillycrypt.exfat_browser.presentation.state.ExFATBrowserState
-import com.sillycrypt.exfat_browser.presentation.viewModel.ExFatBrowserVM
-import androidx.core.net.toUri
 import com.sillycrypt.exfat_android.provider.ExFatDocumentsProvider
 import com.sillycrypt.exfat_browser.R
+import com.sillycrypt.exfat_browser.presentation.state.ExFATBrowserState
+import com.sillycrypt.exfat_browser.presentation.viewModel.ExFatBrowserVM
 
 @Composable
 fun ExFatBrowserRoute(
@@ -370,6 +369,9 @@ private fun CreateEntryDialog(
             OutlinedTextField(
                 value = name,
                 onValueChange = { name = it },
+                keyboardOptions = KeyboardOptions(
+                    platformImeOptions = PlatformImeOptions()
+                ),
                 label = {
                     Text(label)
                 },

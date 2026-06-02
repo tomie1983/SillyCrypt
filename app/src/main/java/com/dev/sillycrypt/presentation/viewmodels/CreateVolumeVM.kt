@@ -7,6 +7,7 @@ import com.dev.libsillycript.core.HIDDEN_HEADER_DEFAULT_INDEX
 import com.dev.libsillycript.core.blockCiphers.BlockCipherType
 import com.dev.libsillycript.core.fs.FsType
 import com.dev.libsillycript.core.kdfs.KDFType
+import com.dev.libsillycrypt.R
 import com.dev.sillycrypt.domain.entities.CreateVolumeState
 import com.dev.sillycrypt.domain.repository.CreateVolumeRepository
 import com.dev.sillycrypt.presentation.states.CreateVolumeUIState
@@ -14,6 +15,7 @@ import com.dev.sillycrypt.presentation.states.ErrorState
 import com.dev.sillycrypt.presentation.states.ConfirmDialog
 import com.dev.sillycrypt.presentation.states.VolumeCreationForm
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dev.sillycrypt.common.text.UIText
 import kotlinx.collections.immutable.toImmutableList
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -29,13 +31,12 @@ import javax.inject.Inject
 @HiltViewModel
 class CreateVolumeVM @Inject constructor(
     private val repository: CreateVolumeRepository,
+    private val _errorState: MutableStateFlow<ErrorState?>
 ): ViewModel() {
 
     private val createVolumeUIStateFLow = MutableStateFlow<CreateVolumeUIState>(
         CreateVolumeUIState.Initial
     )
-
-    private val _errorState = MutableStateFlow<ErrorState?>(null)
 
     val errorState = _errorState.asStateFlow()
 
@@ -77,8 +78,8 @@ class CreateVolumeVM @Inject constructor(
                 }
             }.onFailure { error ->
                 _errorState.value = ErrorState(
-                    title = "Ошибка выбора файла",
-                    message = error.stackTraceToString()
+                    title = UIText.StringResource(R.string.file_selection_error),
+                    message = UIText.UsualString(error.stackTraceToString())
                 )
             }
         }
@@ -182,8 +183,8 @@ class CreateVolumeVM @Inject constructor(
         val data = runCatching { current.forms.map { it.toVeracryptData() } }
             .getOrElse { error ->
                 _errorState.value = ErrorState(
-                    title = "Некорректные параметры",
-                    message = error.message ?: error.stackTraceToString()
+                    title = UIText.StringResource(R.string.incorrect_volume_params),
+                    message = UIText.UsualString(error.message ?: error.stackTraceToString())
                 )
                 return
             }
@@ -203,8 +204,8 @@ class CreateVolumeVM @Inject constructor(
                     it.copy(loading = false, confirmDialog = null)
                 }
                 _errorState.value = ErrorState(
-                    title = "Ошибка открытия тома",
-                    message = error.stackTraceToString()
+                    title = UIText.StringResource(R.string.failed_to_create_volume),
+                    message = UIText.UsualString(error.stackTraceToString())
                 )
             }
         }

@@ -22,12 +22,10 @@ import com.dev.sillycrypt.presentation.states.CreateVolumeUIState
 import com.dev.sillycrypt.presentation.states.ConfirmDialog
 import com.dev.sillycrypt.presentation.viewmodels.CreateVolumeVM
 
-private const val TAG_CREATE = "CreateFileScreen"
-
 @Composable
 fun CreateVolumeScreen(
     innerPadding: PaddingValues,
-    closeActivity: () -> Unit,
+    goBack: () -> Boolean,
     viewModel: CreateVolumeVM = hiltViewModel()
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -44,7 +42,7 @@ fun CreateVolumeScreen(
     BackHandler {
         val consumed = viewModel.onBackPressed()
         if (!consumed) {
-            closeActivity()
+            goBack()
         }
     }
 
@@ -112,10 +110,12 @@ fun CreateVolumeScreen(
         }
     }
 
+    val context = LocalContext.current
+
     errorState?.let { error ->
         ErrorDialog(
-            title = error.title,
-            message = error.message,
+            title = error.title.asString(context),
+            message = error.message.asString(context),
             onDismiss = viewModel::dismissError
         )
     }

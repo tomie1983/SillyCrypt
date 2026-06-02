@@ -1,33 +1,33 @@
 package com.dev.sillycrypt.data.repository
 
-import android.content.ContentResolver
 import android.content.Context
 import android.net.Uri
-import android.os.ParcelFileDescriptor
-import android.provider.OpenableColumns
+import android.util.Log
 import com.dev.exfat.exfat.EXFatVolumesManager
 import com.dev.exfat.exfat.VeracryptVolumeData
 import com.dev.libsillycript.android.AndroidVeracryptMaster
 import com.dev.libsillycript.core.VeracryptMode
 import com.dev.libsillycript.core.fs.FsType
-import com.dev.sillycrypt.data.mapper.UriMapper
 import com.dev.sillycrypt.domain.entities.VolumeOpeningState
 import com.dev.sillycrypt.domain.repository.ManageVolumeRepository
+import com.libsillycrypt.resources.IO_DISPATCHER
 import com.sillycrypt.exfat_android.provider.ExFatDocumentsProvider
+import com.sillycrypt.mapper.Mapper
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.collections.immutable.toImmutableList
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.combineTransform
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
+import javax.inject.Named
 
 class ManageVolumeRepositoryImpl @Inject constructor(
     private val volumeState: MutableStateFlow<VolumeOpeningState>,
     private val master: AndroidVeracryptMaster,
-    @ApplicationContext private val context: Context
+    @ApplicationContext private val context: Context,
+    private val mapper: Mapper<Uri, String?>
 ): ManageVolumeRepository {
-
-    private val mapper = UriMapper(context)
 
     override val state = combine(volumeState, EXFatVolumesManager.activeVolumes) {
         currentState: VolumeOpeningState, activeVolumes: List<VeracryptVolumeData> ->
@@ -42,7 +42,7 @@ class ManageVolumeRepositoryImpl @Inject constructor(
     }
 
     override suspend fun setDescriptor(uri: Uri) {
-        val name = mapper.map(uri)
+        val name = mapper.map(uri) //fast operation, dispatcher isn't necessary
         check(name != null) {
              "Name of file not found"
         }

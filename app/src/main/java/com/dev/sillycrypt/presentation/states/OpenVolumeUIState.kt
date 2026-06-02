@@ -15,34 +15,34 @@ sealed class OpenVolumeUIState{
         val data: ImmutableList<VeracryptVolumeData> = persistentListOf<VeracryptVolumeData>(),
     ): OpenVolumeUIState()
     data class OpenVolumeFormState(
-        val name: String,
-        val password: String = "",
+        val name: CharSequence,
+        val password: CharSequence = "",
         val kdf: KDFType = KDFType.PBKDF2,
         val cipher: BlockCipherType = BlockCipherType.AES,
         val fsType: FsType = FsType.ExFAT,
-        val pim: String = "0",
-        val index: String = "0",
+        val pim: CharSequence = "0",
+        val index: CharSequence = "0",
 
         val isHiddenVolume: Boolean = false,
         val protectHiddenVolume: Boolean = false,
 
-        val hiddenPassword: String = "",
+        val hiddenPassword: CharSequence = "",
         val hiddenKdf: KDFType = KDFType.PBKDF2,
         val hiddenCipher: BlockCipherType = BlockCipherType.AES,
-        val hiddenPim: String = "0",
-        val hiddenIndex: String = HIDDEN_HEADER_DEFAULT_INDEX.toString(),
+        val hiddenPim: CharSequence = "0",
+        val hiddenIndex: CharSequence = HIDDEN_HEADER_DEFAULT_INDEX.toString(),
         val confirmDialog: ConfirmDialog? = null,
         val loading: Boolean = false
     ): OpenVolumeUIState() {
         fun toVeracryptMode(): VeracryptMode {
             val mainData = VeracryptOpeningData(
-                password = password.toCharArray(),
+                password = password.toString().toCharArray(),
                 kdf = kdf,
                 ciphers = listOf(cipher),
-                pim = pim.toIntOrNull() ?: 0
+                pim = pim.toString().toIntOrNull() ?: 0
             )
 
-            val mainIndex = index.toIntOrNull()
+            val mainIndex = index.toString().toIntOrNull()
                 ?: if (isHiddenVolume) HIDDEN_HEADER_DEFAULT_INDEX else 0
 
             return when {
@@ -57,17 +57,17 @@ sealed class OpenVolumeUIState{
                     require(hiddenPassword.isNotBlank()) { "Введите пароль скрытого тома" }
 
                     val hiddenData = VeracryptOpeningData(
-                        password = hiddenPassword.toCharArray(),
+                        password = hiddenPassword.toString().toCharArray(),
                         kdf = hiddenKdf,
                         ciphers = listOf(hiddenCipher),
-                        pim = hiddenPim.toIntOrNull() ?: 0
+                        pim = hiddenPim.toString().toIntOrNull() ?: 0
                     )
 
                     VeracryptMode.OpenProtected(
                         mainData = mainData,
                         hiddenData = hiddenData,
                         index = mainIndex,
-                        hiddenIndex = hiddenIndex.toIntOrNull() ?: HIDDEN_HEADER_DEFAULT_INDEX
+                        hiddenIndex = hiddenIndex.toString().toIntOrNull() ?: HIDDEN_HEADER_DEFAULT_INDEX
                     )
                 }
 

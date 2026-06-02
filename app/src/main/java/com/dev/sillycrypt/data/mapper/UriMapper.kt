@@ -3,12 +3,16 @@ package com.dev.sillycrypt.data.mapper
 import android.content.ContentResolver
 import android.content.Context
 import android.net.Uri
-import android.os.ParcelFileDescriptor
 import android.provider.OpenableColumns
+import com.sillycrypt.mapper.Mapper
+import dagger.hilt.android.qualifiers.ApplicationContext
+import javax.inject.Inject
 
-class UriMapper(private val context: Context) {
-    fun map(uri: Uri): String? {
-        val fileName = queryFileName(uri)
+class UriMapper @Inject constructor(
+    @ApplicationContext private val context: Context
+): Mapper<Uri, String?> {
+    override fun map(data: Uri): String? {
+        val fileName = queryFileName(data)
         return fileName
     }
 

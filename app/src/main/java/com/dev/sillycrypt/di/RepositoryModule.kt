@@ -1,8 +1,10 @@
 package com.dev.sillycrypt.di
 
 import android.content.Context
+import android.net.Uri
 import androidx.datastore.core.DataStore
 import androidx.datastore.core.DataStoreFactory
+import com.dev.sillycrypt.data.mapper.UriMapper
 import com.dev.sillycrypt.data.repository.AppSettingsRepositoryImpl
 import com.dev.sillycrypt.data.repository.CreateVolumeRepositoryImpl
 import com.dev.sillycrypt.data.repository.ManageVolumeRepositoryImpl
@@ -12,6 +14,7 @@ import com.dev.sillycrypt.domain.repository.CreateVolumeRepository
 import com.dev.sillycrypt.domain.repository.ManageVolumeRepository
 import com.dev.sillycrypt.domain.repository.SettingsRepository
 import com.libsillycrypt.core.serialization.BaseSerializer
+import com.sillycrypt.mapper.Mapper
 import dagger.Binds
 import dagger.Module
 import dagger.Provides
@@ -42,6 +45,10 @@ abstract class RepositoryModule {
     abstract fun bindCreateVolumeRepository(
         impl: CreateVolumeRepositoryImpl
     ): CreateVolumeRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindUriMapper(mapper: UriMapper): Mapper<Uri, String?>
 
     companion object {
 

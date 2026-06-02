@@ -13,6 +13,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
@@ -45,8 +46,10 @@ fun AppNavHost(
 ) {
     val navController = rememberNavController()
 
+    val goBack = remember { { navController.popBackStack() } }
+
     val items = listOf(
-        BottomItem(AppDestination.PickFile, Icons.Default.Add),
+        BottomItem(AppDestination.PickFileNav, Icons.Default.Add),
         BottomItem(AppDestination.CreateFile, Icons.Default.Create),
         BottomItem(AppDestination.ManageWorkProfile, Icons.Default.Work),
         BottomItem(AppDestination.Settings, Icons.Default.Settings)
@@ -144,7 +147,7 @@ fun AppNavHost(
                 }
             }
             composable(AppDestination.CreateFile.route) {
-                CreateVolumeScreen(innerPadding = innerPadding, closeActivity = closeActivity)
+                CreateVolumeScreen(innerPadding = innerPadding, goBack = goBack)
             }
             composable(AppDestination.ManageWorkProfile.route) {
                 WorkProfileSelectionScreen(

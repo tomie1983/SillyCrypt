@@ -63,4 +63,5 @@ dependencies {
     implementation(project(":core:serialization"))
     implementation(project(":core:mapper"))
     implementation(project(":core:common"))
+    implementation(project(":core:resources"))
 }

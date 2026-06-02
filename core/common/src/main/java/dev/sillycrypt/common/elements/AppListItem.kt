@@ -1,4 +1,4 @@
-package com.dev.sillycrypt.settings.presentation.screens
+package dev.sillycrypt.common.elements
 
 import android.content.pm.ApplicationInfo
 import androidx.compose.foundation.Image

@@ -41,6 +41,7 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.dev.sillycrypt.settings.R
 import com.dev.sillycrypt.settings.presentation.state.SettingsScreenState
 import com.dev.sillycrypt.settings.presentation.viewmodels.SettingsVM
+import dev.sillycrypt.common.elements.AppListItem
 import dev.sillycrypt.common.entities.ApplicationInfoWithData
 import kotlinx.collections.immutable.ImmutableList
 

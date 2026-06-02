@@ -5,4 +5,22 @@
     <string name="create">Create</string>
     <string name="work_profile">Work profile</string>
     <string name="settings">Settings</string>
+    <string name="open_volume">Open the volume</string>
+    <string name="protect_hidden_volume">Protect hidden volume</string>
+    <string name="hidden_volume">Hidden volume</string>
+    <string name="index">Index</string>
+    <string name="pim">PIM</string>
+    <string name="fs_type">Filesystem type</string>
+    <string name="encryption_mode">Encryption mode</string>
+    <string name="kdf">KDF</string>
+    <string name="password">Password</string>
+    <string name="please_enter_pim">Please enter PIM</string>
+    <string name="pim_not_a_">PIM is not a number</string>
+    <string name="pim_not_a_number">PIM is not a number</string>
+    <string name="pim_is_too_small">PIM must be >= 0</string>
+    <string name="please_enter_index">Please enter index</string>
+    <string name="index_is_not_a_number">Index is not a number</string>
+    <string name="index_too_small">Index must be >= 0</string>
+    <string name="index_too_big">Index must be &lt;= 256 </string>
+    <string name="file">File: %1$s</string>
 </resources>

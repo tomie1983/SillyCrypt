@@ -7,12 +7,14 @@ import com.dev.libsillycript.core.HIDDEN_HEADER_DEFAULT_INDEX
 import com.dev.libsillycript.core.blockCiphers.BlockCipherType
 import com.dev.libsillycript.core.fs.FsType
 import com.dev.libsillycript.core.kdfs.KDFType
+import com.dev.libsillycrypt.R
 import com.dev.sillycrypt.domain.entities.VolumeOpeningState
 import com.dev.sillycrypt.domain.repository.ManageVolumeRepository
 import com.dev.sillycrypt.presentation.states.ConfirmDialog
 import com.dev.sillycrypt.presentation.states.ErrorState
 import com.dev.sillycrypt.presentation.states.OpenVolumeUIState
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dev.sillycrypt.common.text.UIText
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -27,17 +29,16 @@ import javax.inject.Inject
 @HiltViewModel
 class OpenVolumeVM @Inject constructor(
     private val repository: ManageVolumeRepository,
+    private val openVolumeUIStateFlow: MutableStateFlow<OpenVolumeUIState>,
+    private val _errorState: MutableStateFlow<ErrorState?>
 ): ViewModel() {
-
-    private val openVolumeUIStateFlow = MutableStateFlow<OpenVolumeUIState>(OpenVolumeUIState.Initial())
-
-    private val _errorState = MutableStateFlow<ErrorState?>(null)
 
     val errorState = _errorState.asStateFlow()
 
     private var openJob: Job? = null
 
-    val state = combine(repository.state, openVolumeUIStateFlow) { repositoryState, uiState ->
+    val state = combine(repository.state, openVolumeUIStateFlow) {
+        repositoryState, uiState ->
         when (repositoryState) {
             is VolumeOpeningState.Initial -> {
                 OpenVolumeUIState.Initial(repositoryState.data)
@@ -45,8 +46,10 @@ class OpenVolumeVM @Inject constructor(
 
             is VolumeOpeningState.SelectedDescriptor -> {
                 when (uiState) {
-                    is OpenVolumeUIState.OpenVolumeFormState -> uiState.copy(name = repositoryState.name)
-                    is OpenVolumeUIState.Initial -> OpenVolumeUIState.OpenVolumeFormState(name = repositoryState.name)
+                    is OpenVolumeUIState.OpenVolumeFormState ->
+                        uiState.copy(name = repositoryState.name)
+                    is OpenVolumeUIState.Initial ->
+                        OpenVolumeUIState.OpenVolumeFormState(name = repositoryState.name)
                 }
             }
         }
@@ -72,8 +75,8 @@ class OpenVolumeVM @Inject constructor(
                 }
             }.onFailure { error ->
                 _errorState.value = ErrorState(
-                    title = "Ошибка выбора файла",
-                    message = error.stackTraceToString()
+                    title = UIText.StringResource(R.string.failed_to_select_file),
+                    message = UIText.UsualString(error.stackTraceToString())
                 )
             }
         }
@@ -86,19 +89,19 @@ class OpenVolumeVM @Inject constructor(
                 repository.closeVolume(id)
             }.onFailure { error ->
                 _errorState.value = ErrorState(
-                    title = "Ошибка закрытия тома",
-                    message = error.stackTraceToString()
+                    title = UIText.StringResource(R.string.failed_to_close_volume),
+                    message = UIText.UsualString(error.stackTraceToString())
                 )
             }
         }
     }
 
-    fun updatePassword(value: String) = updateForm { copy(password = value) }
+    fun updatePassword(value: CharSequence) = updateForm { copy(password = value) }
     fun updateKdf(value: KDFType) = updateForm { copy(kdf = value) }
     fun updateCipher(value: BlockCipherType) = updateForm { copy(cipher = value) }
     fun updateFsType(value: FsType) = updateForm { copy(fsType = value) }
-    fun updatePim(value: String) = updateForm { copy(pim = value.filter { it.isDigit() }) }
-    fun updateIndex(value: String) = updateForm { copy(index = value.filter { it.isDigit() }) }
+    fun updatePim(value: CharSequence) = updateForm { copy(pim = value) }
+    fun updateIndex(value: CharSequence) = updateForm { copy(index = value) }
 
     fun updateIsHiddenVolume(value: Boolean) {
         updateForm {
@@ -113,11 +116,11 @@ class OpenVolumeVM @Inject constructor(
     fun updateProtectHiddenVolume(value: Boolean) =
         updateForm { copy(protectHiddenVolume = value) }
 
-    fun updateHiddenPassword(value: String) = updateForm { copy(hiddenPassword = value) }
+    fun updateHiddenPassword(value: CharSequence) = updateForm { copy(hiddenPassword = value) }
     fun updateHiddenKdf(value: KDFType) = updateForm { copy(hiddenKdf = value) }
     fun updateHiddenCipher(value: BlockCipherType) = updateForm { copy(hiddenCipher = value) }
-    fun updateHiddenPim(value: String) = updateForm { copy(hiddenPim = value.filter { it.isDigit() }) }
-    fun updateHiddenIndex(value: String) = updateForm { copy(hiddenIndex = value.filter { it.isDigit() }) }
+    fun updateHiddenPim(value: CharSequence) = updateForm { copy(hiddenPim = value) }
+    fun updateHiddenIndex(value: CharSequence) = updateForm { copy(hiddenIndex = value) }
 
     fun onBackPressed(): Boolean {
         return when (val currentState = state.value) {
@@ -140,7 +143,8 @@ class OpenVolumeVM @Inject constructor(
     }
 
 
-    private fun updateForm(block: OpenVolumeUIState.OpenVolumeFormState.() -> OpenVolumeUIState.OpenVolumeFormState) {
+    private fun updateForm(block: OpenVolumeUIState.OpenVolumeFormState.() ->
+    OpenVolumeUIState.OpenVolumeFormState) {
         openVolumeUIStateFlow.update { state ->
             if (state is OpenVolumeUIState.OpenVolumeFormState) {
                 state.block()
@@ -157,8 +161,8 @@ class OpenVolumeVM @Inject constructor(
         val mode = runCatching { current.toVeracryptMode() }
             .getOrElse { error ->
                 _errorState.value = ErrorState(
-                    title = "Некорректные параметры",
-                    message = error.message ?: error.stackTraceToString()
+                    title = UIText.StringResource(R.string.incorrect_volume_params),
+                    message = UIText.UsualString(error.message ?: error.stackTraceToString())
                 )
                 return
             }
@@ -178,8 +182,8 @@ class OpenVolumeVM @Inject constructor(
                     it.copy(loading = false, confirmDialog = null)
                 }
                 _errorState.value = ErrorState(
-                    title = "Ошибка открытия тома",
-                    message = error.stackTraceToString()
+                    title = UIText.StringResource(R.string.failed_to_open),
+                    message = UIText.UsualString(error.stackTraceToString())
                 )
             }
         }

@@ -10,9 +10,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.dev.exfat.exfat.VeracryptVolumeData
+import com.dev.libsillycrypt.R
 import com.dev.sillycrypt.presentation.elements.ConfirmDialog
 import com.dev.sillycrypt.presentation.elements.ErrorDialog
 import com.dev.sillycrypt.presentation.elements.OpenVolumeFormContent
@@ -21,8 +24,6 @@ import com.dev.sillycrypt.presentation.elements.LoadingContent
 import com.dev.sillycrypt.presentation.states.ConfirmDialog
 import com.dev.sillycrypt.presentation.states.OpenVolumeUIState
 import com.dev.sillycrypt.presentation.viewmodels.OpenVolumeVM
-
-private const val TAG_PICK = "PickFileScreen"
 
 @Composable
 fun OpenVolumeScreen(
@@ -92,10 +93,10 @@ fun OpenVolumeScreen(
                 when (uiState.confirmDialog) {
                     ConfirmDialog.ExitForm -> {
                         ConfirmDialog(
-                            title = "Выйти из формы?",
-                            message = "Выбранный файл будет сброшен.",
-                            confirmText = "Выйти",
-                            dismissText = "Остаться",
+                            title = stringResource(R.string.exit_form),
+                            message = stringResource(R.string.selected_file_forgotten),
+                            confirmText = stringResource(R.string.exit),
+                            dismissText = stringResource(R.string.stay),
                             onConfirm = viewModel::confirmExitForm,
                             onDismiss = viewModel::dismissConfirmDialog
                         )
@@ -103,10 +104,10 @@ fun OpenVolumeScreen(
 
                     ConfirmDialog.CancelLoading -> {
                         ConfirmDialog(
-                            title = "Прервать открытие тома?",
-                            message = "Открытие будет остановлено.",
-                            confirmText = "Прервать",
-                            dismissText = "Продолжить",
+                            title = stringResource(R.string.cancel_volume_opening),
+                            message = stringResource(R.string.volume_would_not_be_opened),
+                            confirmText = stringResource(R.string.stop),
+                            dismissText = stringResource(R.string.continue_opening),
                             onConfirm = viewModel::confirmCancelLoading,
                             onDismiss = viewModel::dismissConfirmDialog
                         )
@@ -118,10 +119,12 @@ fun OpenVolumeScreen(
         }
     }
 
+    val context = LocalContext.current
+
     errorState?.let { error ->
         ErrorDialog(
-            title = error.title,
-            message = error.message,
+            title = error.title.asString(context),
+            message = error.message.asString(context),
             onDismiss = viewModel::dismissError
         )
     }
