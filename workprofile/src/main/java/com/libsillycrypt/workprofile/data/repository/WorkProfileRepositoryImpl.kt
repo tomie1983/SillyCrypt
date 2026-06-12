@@ -120,7 +120,6 @@ class WorkProfileRepositoryImpl @Inject constructor(
     }
 
     override fun deleteProfile(): Boolean {
-        Log.w("deleteProfile","started")
         return manager.deleteProfile()
     }
 }

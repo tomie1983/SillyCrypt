@@ -20,7 +20,6 @@ class MainActivityVM @Inject constructor(
     private val workProfileRepository: WorkProfileRepository,
     private val settingsRepository: SettingsRepository,
     private val authenticationUtility: AuthenticationUtility,
-    private val serviceUtils: ServiceUtils
 ): ViewModel() {
 
     init {
@@ -51,7 +50,6 @@ class MainActivityVM @Inject constructor(
 
     fun tryInstallApps() {
         viewModelScope.launch {
-            Log.w("installCheck",workProfileRepository.settings.first().provisioned.toString())
             workProfileRepository.refershWorkProfileApps()
             if (!workProfileRepository.settings.first().provisioned) {
                 workProfileRepository.installApps(settingsRepository.getAppsToInstall(), ::refreshApps)

@@ -12,4 +12,5 @@ interface SettingsRepository {
     suspend fun markPackageForInstallation(packageName: String, install: Boolean)
     suspend fun setLauncherIconVisible(visible: Boolean)
     suspend fun refreshVisibility()
+    suspend fun setScreenshotsStatus(allowed: Boolean)
 }

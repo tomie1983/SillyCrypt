@@ -5,7 +5,6 @@ import android.content.pm.PackageManager
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.core.graphics.drawable.toBitmap
 import com.dev.sillycrypt.settings.data.entities.AppSettingsData
-import com.dev.sillycrypt.settings.domain.entities.AppSettings
 import com.dev.sillycrypt.settings.domain.entities.PackagesAndTimeoutSettings
 import com.sillycrypt.mapper.Mapper
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -25,6 +24,7 @@ class AppSettingsMapper @Inject constructor(
                 .asImageBitmap()
             ApplicationInfoWithData(it, title, it.packageName, icon, it.packageName in toInstallSet)
         }.sortedBy { it.title }
-        return PackagesAndTimeoutSettings(timeoutMillis = data.timeoutMillis, packagesToInstall = packagesList.toPersistentList())
+        return PackagesAndTimeoutSettings(timeoutMillis = data.timeoutMillis, packagesToInstall = packagesList.toPersistentList(),
+            allowScreenshots = data.allowScreenshots)
     }
 }

@@ -39,6 +39,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.dev.sillycrypt.settings.R
+import com.dev.sillycrypt.settings.presentation.elements.SwitchSetting
 import com.dev.sillycrypt.settings.presentation.state.SettingsScreenState
 import com.dev.sillycrypt.settings.presentation.viewmodels.SettingsVM
 import dev.sillycrypt.common.elements.AppListItem
@@ -66,6 +67,10 @@ fun SettingsScreen(
         settingsViewModel::hideApp
     }
 
+    val setScreenshotsStatus = remember {
+        settingsViewModel::setScreenshotsStatus
+    }
+
     val settingsState = state.value
 
     when (settingsState) {
@@ -85,7 +90,8 @@ fun SettingsScreen(
                 onPackageInstallChanged = onPackageInstallChanged,
                 onTimeoutChanged = onTimeoutChanged,
                 setDialogState = setDialogState,
-                hideApp = hideApp
+                hideApp = hideApp,
+                setScreenshotsStatus = setScreenshotsStatus
             )
         }
     }
@@ -98,7 +104,8 @@ private fun SettingsContent(
     onPackageInstallChanged: (app: ApplicationInfo, install: Boolean) -> Unit,
     onTimeoutChanged: (Long) -> Unit,
     setDialogState: (Boolean) -> Unit,
-    hideApp: (Boolean) -> Unit
+    hideApp: (Boolean) -> Unit,
+    setScreenshotsStatus: (Boolean) -> Unit
 ) {
     var timeoutText by remember(state.timeout) {
         mutableStateOf("")
@@ -178,27 +185,17 @@ private fun SettingsContent(
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        Surface(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable {
-                    setDialogState(true)
-                },
-            shape = MaterialTheme.shapes.medium,
-            tonalElevation = 2.dp
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = stringResource(R.string.hide_app_icon),
-                    modifier = Modifier.weight(1f),
-                    style = MaterialTheme.typography.bodyLarge
-                )
-                Switch(!state.appIsVisible, hideApp)
-            }
-        }
+        SwitchSetting(
+            stringResource(R.string.hide_app_icon),
+            !state.appIsVisible, hideApp
+        )
+        SettingsSectionTitle(stringResource(R.string.ui_settings))
+
+        Spacer(modifier = Modifier.height(8.dp))
+        SwitchSetting(
+            stringResource(R.string.disable_screenshots),
+            !state.isScreenshotsAllowed, setScreenshotsStatus
+        )
     }
 
 
@@ -233,7 +230,7 @@ private fun AppsToInstallDialog(
     AlertDialog(
         onDismissRequest = onDismiss,
         title = {
-            Text("Choose apps to install")
+            Text(stringResource(R.string.choose_apps))
         },
         text = {
             LazyColumn(
@@ -258,7 +255,7 @@ private fun AppsToInstallDialog(
             TextButton(
                 onClick = onDismiss
             ) {
-                Text("Close")
+                Text(stringResource(R.string.close))
             }
         }
     )

@@ -6,5 +6,6 @@ import kotlinx.collections.immutable.ImmutableList
 data class AppSettings(
     val packagesToInstall: ImmutableList<ApplicationInfoWithData>,
     val timeoutMillis: Long,
+    val allowScreenshots: Boolean,
     val isAppVisible: Boolean
 )

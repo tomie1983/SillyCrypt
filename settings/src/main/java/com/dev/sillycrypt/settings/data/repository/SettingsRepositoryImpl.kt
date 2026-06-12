@@ -33,7 +33,8 @@ class SettingsRepositoryImpl @Inject constructor(
         get() = combine(settingsDataStore.data.map {
             mapper.map(it)
         }, launcherIconVisible) { settingsData, visible ->
-            AppSettings(settingsData.packagesToInstall, settingsData.timeoutMillis, visible)
+            AppSettings(settingsData.packagesToInstall, settingsData.timeoutMillis,
+                settingsData.allowScreenshots, visible)
         }
 
     override suspend fun refreshVisibility() {
@@ -62,6 +63,10 @@ class SettingsRepositoryImpl @Inject constructor(
 
     override suspend fun setTimeout(timeout: Long) {
         settingsDataStore.updateData { it.copy(timeoutMillis = timeout) }
+    }
+
+    override suspend fun setScreenshotsStatus(allowed: Boolean) {
+        settingsDataStore.updateData { it.copy(allowScreenshots = allowed) }
     }
 
     override suspend fun markPackageForInstallation(

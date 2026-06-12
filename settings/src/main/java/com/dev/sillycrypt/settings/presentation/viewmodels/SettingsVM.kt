@@ -33,6 +33,7 @@ class SettingsVM @Inject constructor(
             settings.packagesToInstall,
             settings.timeoutMillis,
             settings.isAppVisible,
+            settings.allowScreenshots,
             showDialog
         )
     }.stateIn(
@@ -60,6 +61,12 @@ class SettingsVM @Inject constructor(
     fun setTimeoutMillis(timeout: Long) {
         viewModelScope.launch {
             repository.setTimeout(timeout)
+        }
+    }
+
+    fun setScreenshotsStatus(allowed: Boolean) {
+        viewModelScope.launch {
+            repository.setScreenshotsStatus(allowed)
         }
     }
 }

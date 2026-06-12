@@ -9,6 +9,7 @@ sealed class SettingsScreenState {
         val packages: ImmutableList<ApplicationInfoWithData>,
         val timeout: Long,
         val appIsVisible: Boolean,
+        val isScreenshotsAllowed: Boolean,
         val showDialog: Boolean
     ): SettingsScreenState()
 }

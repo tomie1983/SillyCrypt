@@ -5,5 +5,6 @@ import kotlinx.collections.immutable.ImmutableList
 
 data class PackagesAndTimeoutSettings(
     val packagesToInstall: ImmutableList<ApplicationInfoWithData>,
-    val timeoutMillis: Long
+    val timeoutMillis: Long,
+    val allowScreenshots: Boolean
 )
