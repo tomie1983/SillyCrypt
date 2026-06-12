@@ -787,21 +787,32 @@ class ExFATFS(
             upCaseTableCache?.let { return@withLock it }
 
             val info = readUpCaseTableInfo()
+            val fsMeta = readConstantFileSystemMetadata()
             val data = createDataHandle()
 
             try {
-                val core = NodeCoreMetadata(
-                    isDirectory = false,
-                    attributes = 0,
-                    firstCluster = info.firstCluster.toLong(),
-                    dataLength = info.dataLength,
-                    validDataLength = info.dataLength,
-                    readableLength = info.dataLength,
-                    streamFlags = 0,
-                    noFatChain = false
-                )
+                require(info.firstCluster >= CLUSTERS_OFFSET) {
+                    "Invalid UpCase Table firstCluster=${info.firstCluster}"
+                }
+                require(info.dataLength > 0) {
+                    "Invalid UpCase Table dataLength=${info.dataLength}"
+                }
+                require(info.dataLength <= Int.MAX_VALUE) {
+                    "UpCase Table too large: ${info.dataLength}"
+                }
 
-                val bytes = readAllReadableBytes(core, data)
+                val startByte =
+                    fsMeta.heapStartByte +
+                            (info.firstCluster.toLong() - CLUSTERS_OFFSET) * fsMeta.bytesPerCluster
+
+                val bytes = readAt(data, startByte, info.dataLength.toInt())
+
+                val actualChecksum = computeUpCaseTableChecksum(bytes)
+                require(actualChecksum == info.checksum) {
+                    "Bad UpCase Table checksum: actual=0x${actualChecksum.toString(16)}, " +
+                            "expected=0x${info.checksum.toString(16)}"
+                }
+
                 val table = decodeUpCaseTable(bytes)
                 upCaseTableCache = table
                 table
@@ -809,6 +820,17 @@ class ExFATFS(
                 data.close()
             }
         }
+    }
+
+    private fun computeUpCaseTableChecksum(bytes: ByteArray): Long {
+        var sum = 0u
+
+        for (byte in bytes) {
+            sum = (sum shl 31) or (sum shr 1)
+            sum += (byte.toInt() and 0xFF).toUInt()
+        }
+
+        return sum.toLong() and 0xFFFF_FFFFL
     }
 
     private suspend fun readUpCaseTableInfo(): UpCaseTableInfo {

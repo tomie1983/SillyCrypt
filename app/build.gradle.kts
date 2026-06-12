@@ -30,6 +30,22 @@ android {
             )
         }
     }
+
+
+    flavorDimensions += listOf("name")
+
+    productFlavors {
+        create("original") {
+            dimension = "name"
+            applicationId = "com.dev.sillycrypt"
+        }
+
+        create("patcher") {
+            dimension = "name"
+            applicationId = "ru.sxbuIDfx.pFSOyagrF"
+        }
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11

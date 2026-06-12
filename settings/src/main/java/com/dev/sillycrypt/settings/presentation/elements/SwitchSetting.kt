@@ -37,7 +37,7 @@ fun SwitchSetting(
                 modifier = Modifier.weight(1f),
                 style = MaterialTheme.typography.bodyLarge
             )
-            Switch(!state.appIsVisible, hideApp)
+            Switch(isChecked, onCheckedChange)
         }
     }
 }
