@@ -35,7 +35,7 @@ class ExFATFSTest {
     }
 
     @Test
-    fun createFileSystem_shouldCreateValidEmptyExFatVolume() = runTest {
+    fun createValidEmptyExFatVolume() = runTest {
         val fixture = createFixture()
 
         assertTrue(fixture.fs.isExFat())
@@ -52,7 +52,7 @@ class ExFATFSTest {
     }
 
     @Test
-    fun createAndWriteFile_shouldPersistAfterReopeningFileSystem() = runTest {
+    fun fileCreationIsSuccessful() = runTest {
         val fixture = createFixture()
 
         val root = fixture.fs.root()
@@ -77,7 +77,7 @@ class ExFATFSTest {
     }
 
     @Test
-    fun editFile_shouldOverwriteAppendAndTruncateContent() = runTest {
+    fun editFileModifiesContent() = runTest {
         val fixture = createFixture()
 
         val file = fixture.fs.root().createFile("edit.txt")
@@ -115,7 +115,7 @@ class ExFATFSTest {
     }
 
     @Test
-    fun deleteFile_shouldRemoveFileAndPersistAfterReopening() = runTest {
+    fun deleteFileRemovesFile() = runTest {
         val fixture = createFixture()
 
         val root = fixture.fs.root()
@@ -138,7 +138,7 @@ class ExFATFSTest {
     }
 
     @Test
-    fun createDirectoriesAndFiles_shouldReturnExpectedFilesByPath() = runTest {
+    fun createDirectoriesAndFiles() = runTest {
         val fixture = createFixture()
 
         val root = fixture.fs.root()
@@ -175,7 +175,7 @@ class ExFATFSTest {
     }
 
     @Test
-    fun recursiveWalk_shouldFindAllExpectedFilesAndMatchHashes() = runTest {
+    fun recursiveWalkFindsAllFiles() = runTest {
         val fixture = createFixture()
 
         val root = fixture.fs.root()
@@ -210,7 +210,7 @@ class ExFATFSTest {
     }
 
     @Test
-    fun deleteEmptyDirectory_shouldRemoveDirectoryAndPersistAfterReopening() = runTest {
+    fun deleteEmptyDirectory() = runTest {
         val fixture = createFixture()
 
         val root = fixture.fs.root()
@@ -233,7 +233,7 @@ class ExFATFSTest {
     }
 
     @Test
-    fun deleteDirectoryRecursively_shouldRemoveAllChildrenAndPersistAfterReopening() = runTest {
+    fun deleteDirectoryRecursively() = runTest {
         val fixture = createFixture()
 
         val root = fixture.fs.root()
@@ -274,7 +274,7 @@ class ExFATFSTest {
     }
 
     @Test
-    fun concurrentOperations_shouldCreateWriteReadAndDeleteDifferentFilesSafely() = runTest {
+    fun runConcurrentOperations() = runTest {
         val fixture = createFixture(volumeSizeBytes = 96 * 1024 * 1024)
 
         val root = fixture.fs.root()

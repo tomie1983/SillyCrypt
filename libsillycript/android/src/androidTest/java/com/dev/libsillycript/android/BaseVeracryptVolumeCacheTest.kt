@@ -39,7 +39,7 @@ class BaseVeracryptVolumeCacheTest {
     }
 
     @Test
-    fun `repeated`() = runTest {
+    fun repeatedReadingUsesCache() = runTest {
         // Arrange
         val outerFile = File(tempDir, "container.tc")
         createTestContainerWithKnownPlaintext(
@@ -77,7 +77,7 @@ class BaseVeracryptVolumeCacheTest {
     }
 
     @Test
-    fun `cache`() = runTest {
+    fun cacheIsShared() = runTest {
         // Arrange
         val outerFile = File(tempDir, "container.tc")
         createTestContainerWithKnownPlaintext(
@@ -125,7 +125,53 @@ class BaseVeracryptVolumeCacheTest {
     }
 
     @Test
-    fun `write`() = runTest {
+    fun cacheIsCleared() = runTest {
+        val outerFile = File(tempDir, "container.tc")
+        createTestContainerWithKnownPlaintext(
+            outerFile = outerFile,
+            plainSize = 4096,
+            fillByte = 0x22
+        )
+
+        val sectorsCache = SharedSectorCache(maxCachedSectors = 64)
+
+        AndroidVeracryptMaster(appContext, MutableStateFlow(100))
+            .openRaw(
+                outerFile,
+                VeracryptMode.OpenNormal(
+                    VeracryptOpeningData(
+                        "abc".toCharArray(),
+                        KDFType.PBKDF2,
+                        listOf(BlockCipherType.AES)
+                    )
+                ),
+                sectorsCache
+            )
+            .use { volume ->
+                val before = ByteArray(128)
+                volume.seek(0)
+                volume.read(before)
+
+                val cachedSector = sectorsCache.cachedSectorKeysSnapshot().first()
+                corruptCiphertextBytes(
+                    outerFile,
+                    position = cachedSector * 512L,
+                    length = 512
+                )
+
+                sectorsCache.clear()
+
+                val after = ByteArray(128)
+                volume.seek(0)
+
+                val result = runCatching { volume.read(after) }
+
+                assert(result.isFailure || !after.contentEquals(before))
+            }
+    }
+
+    @Test
+    fun cacheIsUpdated() = runTest {
         // Arrange
         val outerFile = File(tempDir, "container.tc")
         createTestContainerWithKnownPlaintext(
@@ -164,7 +210,7 @@ class BaseVeracryptVolumeCacheTest {
     }
 
     @Test
-    fun `partial`() = runTest {
+    fun partialWriteChangesCache() = runTest {
         // Arrange
         val outerFile = File(tempDir, "container.tc")
         createTestContainerWithKnownPlaintext(

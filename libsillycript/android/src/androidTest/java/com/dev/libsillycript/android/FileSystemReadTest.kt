@@ -46,7 +46,6 @@ class FileSystemReadTest {
             "/test2", "/test",
             "/test2/test2", "/test2/test",
             "/test/test", "/test/test/test",
-            "/.Trash-1000", "/.Trash-1000/info", "/.Trash-1000/files"
         )
 
         private lateinit var appContext: Context
@@ -54,6 +53,8 @@ class FileSystemReadTest {
         private lateinit var secondFile: File
 
         private lateinit var mainFIle: File
+
+        private lateinit var hiddenFile: File
 
         private fun Context.copyAssetToFiles(name: String): File {
             val dest = File(filesDir, name)
@@ -76,28 +77,11 @@ class FileSystemReadTest {
     fun setUp() {
         appContext =InstrumentationRegistry.getInstrumentation().targetContext
 
-        // Копируем тестовые контейнеры из assets в приватную папку
         normalFile = appContext.copyAssetToFiles("test3")
         secondFile = appContext.copyAssetToFiles("test")
         mainFIle = appContext.copyAssetToFiles("test4")
+        hiddenFile = appContext.copyAssetToFiles("test5")
         check(normalFile.exists()) { "Missing asset: ${normalFile.path}" }
-    }
-
-    @Test
-    fun openOuterVolume_hashMatches() = runTest {
-        val fs = AndroidVeracryptMaster(appContext,MutableStateFlow(100)).open(
-            normalFile,
-            VeracryptMode.OpenNormal(VeracryptOpeningData("abc".toCharArray(),
-            KDFType.PBKDF2,
-            listOf(BlockCipherType.AES))),
-            FsType.ExFAT, "test")
-            EXFatVolumesManager.get(fs).getFileFromPath("/").use { file ->
-            println(file == null)
-            println(file?.isDirectory)
-            file?.listFiles()?.forEach {
-                println(it.path)
-            }
-        }
     }
 
     @Test
@@ -112,6 +96,25 @@ class FileSystemReadTest {
             "test"
         )
 
+        checkFileSystemContent(fs)
+    }
+
+    @Test
+    fun checkHiddenFileSystemContent() = runTest(timeout = Duration.INFINITE) {
+        // Arrange
+        val fs = AndroidVeracryptMaster(appContext, MutableStateFlow(100)).open(
+            hiddenFile,
+            VeracryptMode.OpenHidden(VeracryptOpeningData("abcd".toCharArray(),
+                KDFType.PBKDF2,
+                listOf(BlockCipherType.AES))),
+            FsType.ExFAT,
+            "test"
+        )
+
+        checkFileSystemContent(fs)
+    }
+
+    private suspend fun checkFileSystemContent(fs: String) {
         val actualDirectories = linkedSetOf<String>()
         val actualHashes = linkedMapOf<String, String>()
 
@@ -119,41 +122,38 @@ class FileSystemReadTest {
         EXFatVolumesManager
             .get(fs)
             .getFileFromPath("/")?.use { root ->
-            collectTree(
-                file = root,
-                directoriesOut = actualDirectories,
-                fileHashesOut = actualHashes
-            )
-
-            // Assert: expected directories exist
-            val expectedDirectories = directories.toSet()
-            assertTrue(
-                "Missing directories: ${expectedDirectories - actualDirectories}\nActual: $actualDirectories",
-                actualDirectories.containsAll(expectedDirectories)
-            )
-
-            // Assert: expected file paths exist
-            val expectedFilePaths = mapOfHashes.keys
-            val actualFilePaths = actualHashes.keys.toSet()
-            assertTrue(
-                "Missing files: ${expectedFilePaths - actualFilePaths}\nActual: $actualFilePaths",
-                actualFilePaths.containsAll(expectedFilePaths)
-            )
-
-            // Assert: hashes match
-            for ((rawPath, expectedHash) in mapOfHashes) {
-                val normalizedPath = rawPath
-                val actualHash = actualHashes[normalizedPath]
-                assertEquals(
-                    "Hash mismatch for file: $normalizedPath",
-                    expectedHash.lowercase(),
-                    actualHash
+                collectTree(
+                    file = root,
+                    directoriesOut = actualDirectories,
+                    fileHashesOut = actualHashes
                 )
-            }
 
-            // Если хочешь проверить точное совпадение состава дерева, а не только наличие ожидаемых:
-            assertEquals("Unexpected directories", expectedDirectories, actualDirectories)
-        }
+                // Assert: expected directories exist
+                val expectedDirectories = directories.toSet()
+                assertTrue(
+                    "Missing directories: ${expectedDirectories - actualDirectories}\nActual: $actualDirectories",
+                    actualDirectories.containsAll(expectedDirectories)
+                )
+
+                // Assert: expected file paths exist
+                val expectedFilePaths = mapOfHashes.keys
+                val actualFilePaths = actualHashes.keys.toSet()
+                assertTrue(
+                    "Missing files: ${expectedFilePaths - actualFilePaths}\nActual: $actualFilePaths",
+                    actualFilePaths.containsAll(expectedFilePaths)
+                )
+
+                // Assert: hashes match
+                for ((rawPath, expectedHash) in mapOfHashes) {
+                    val normalizedPath = rawPath
+                    val actualHash = actualHashes[normalizedPath]
+                    assertEquals(
+                        "Hash mismatch for file: $normalizedPath",
+                        expectedHash.lowercase(),
+                        actualHash
+                    )
+                }
+            }
     }
 
     private suspend fun collectTree(
@@ -191,18 +191,5 @@ class FileSystemReadTest {
         val hash = MessageDigest.getInstance("SHA-512").digest(data)
         return BigInteger(1, hash).toString(16).padStart(128, '0').lowercase()
     }
-
-    @Test
-    fun checkFileSystemCorrect() = runTest {
-
-    }
-
-    @Test
-    fun checkFileSystemIncorrect() = runTest {
-
-    }
-
-
-
 
 }

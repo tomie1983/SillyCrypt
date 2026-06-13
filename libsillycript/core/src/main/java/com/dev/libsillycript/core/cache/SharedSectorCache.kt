@@ -76,6 +76,12 @@ class SharedSectorCache(
         }
     }
 
+    suspend fun cachedSectorKeysSnapshot(): Set<Long> {
+        return cacheMutex.withLock {
+            sectorCache.keys.toSet()
+        }
+    }
+
     /**
      * Optional helper: checks presence only.
      */

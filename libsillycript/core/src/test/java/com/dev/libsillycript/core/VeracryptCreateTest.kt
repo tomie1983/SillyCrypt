@@ -1,6 +1,5 @@
 package com.dev.libsillycript.core
 
-import com.dev.exfat.data.FileRandomAccessData
 import com.dev.libsillycript.core.blockCiphers.BlockCipherType
 import com.dev.libsillycript.core.factory.UsualFileFactory
 import com.dev.libsillycript.core.kdfs.KDFType
@@ -28,6 +27,7 @@ class VeracryptCreateTest {
     companion object {
         private const val OUTER_PWD = "pwd"
         private const val HIDDEN_PWD = "hidden"
+        private const val SECOND_HIDDEN_PWD = "hidden2"
 
         @BeforeClass
         @JvmStatic
@@ -108,7 +108,7 @@ class VeracryptCreateTest {
     // 2.  Outer + Hidden      (outer 10 MB, hidden 2 MB)
     // ------------------------------------------------------------------------
     @Test
-    fun createVolumeWithHidden_thenReadWriteHiddenAndOuter() = runTest {
+    fun createVolumeWithHidden_thenReadWrite() = runTest {
         val outerSize = 10 * 1024 * 1024L // total container size
         val hiddenSize = 2 * 1024 * 1024L // dedicated hidden payload
 
@@ -163,6 +163,103 @@ class VeracryptCreateTest {
             listOf(BlockCipherType.AES)))
         ).use { hidden ->
             val txt = "Hello hidden!".toByteArray()
+            hidden.seek(0) // safe – hidden header lies before this
+            hidden.write(txt)
+
+            val read = ByteArray(txt.size)
+            hidden.seek(0)
+            hidden.read(read)
+            assertArrayEquals("Hidden round-trip failed", txt, read)
+        }
+    }
+
+    // ------------------------------------------------------------------------
+    // 2.  Outer + Hidden      (outer 10 MB, hidden 2 MB)
+    // ------------------------------------------------------------------------
+    @Test
+    fun createAdditionalHiddenVolume_thenReadWrite() = runTest {
+        val outerSize = 10 * 1024 * 1024L // total container size
+        val hiddenSize = 2 * 1024 * 1024L // dedicated hidden payload
+        val secondHiddenSize = 1 * 1024 * 1024L
+
+        // 1) create ----------------------------------------------------------
+        VeraCryptMaster(KeyStoreFactoryUnsafeImpl()).createRaw(
+            factory = UsualFileFactory(scratch),
+            data = listOf(
+                VeracryptData(
+                    size = outerSize,
+                    veracryptOpeningData = VeracryptOpeningData(
+                        OUTER_PWD.toCharArray(),
+                        KDFType.PBKDF2,
+                        listOf(BlockCipherType.AES),
+                    ),
+                    FsType.ExFAT,
+                    0
+                ),
+                VeracryptData(
+                    size = hiddenSize,
+                    veracryptOpeningData = VeracryptOpeningData(
+                        HIDDEN_PWD.toCharArray(),
+                        KDFType.PBKDF2,
+                        listOf(BlockCipherType.AES),
+                    ),
+                    fsType = FsType.ExFAT,
+                    HIDDEN_HEADER_DEFAULT_INDEX
+                ),
+                VeracryptData(
+                    size = secondHiddenSize,
+                    veracryptOpeningData = VeracryptOpeningData(
+                        SECOND_HIDDEN_PWD.toCharArray(),
+                        KDFType.PBKDF2,
+                        listOf(BlockCipherType.AES),
+                    ),
+                    fsType = FsType.ExFAT,
+                    1
+                )
+            ),
+        )
+
+
+        // 2-A) open *outer* --------------------------------------------------
+        VeraCryptMaster(KeyStoreFactoryUnsafeImpl()).openRaw(
+            scratch,
+            VeracryptMode.OpenNormal(VeracryptOpeningData(OUTER_PWD.toCharArray(),
+                KDFType.PBKDF2,
+                listOf(BlockCipherType.AES)))).use { outer ->
+            val txt = "Hello outer!".toByteArray()
+            outer.seek(512) // keep far away from hidden
+            outer.write(txt)
+            val read = ByteArray(txt.size)
+            outer.seek(512)
+            outer.read(read)
+            assertArrayEquals("Outer round-trip failed", txt, read)
+        }
+
+        // 2-B) open *hidden* -------------------------------------------------
+        VeraCryptMaster(KeyStoreFactoryUnsafeImpl()).openRaw(
+            scratch,
+            VeracryptMode.OpenHidden(VeracryptOpeningData(HIDDEN_PWD.toCharArray(),
+                KDFType.PBKDF2,
+                listOf(BlockCipherType.AES)))
+        ).use { hidden ->
+            val txt = "Hello hidden!".toByteArray()
+            hidden.seek(0) // safe – hidden header lies before this
+            hidden.write(txt)
+
+            val read = ByteArray(txt.size)
+            hidden.seek(0)
+            hidden.read(read)
+            assertArrayEquals("Hidden round-trip failed", txt, read)
+        }
+
+        // 2-B) open second *hidden* -------------------------------------------------
+        VeraCryptMaster(KeyStoreFactoryUnsafeImpl()).openRaw(
+            scratch,
+            VeracryptMode.OpenHidden(VeracryptOpeningData(SECOND_HIDDEN_PWD.toCharArray(),
+                KDFType.PBKDF2,
+                listOf(BlockCipherType.AES)),1)
+        ).use { hidden ->
+            val txt = "Hello hidden 2!".toByteArray()
             hidden.seek(0) // safe – hidden header lies before this
             hidden.write(txt)
 
